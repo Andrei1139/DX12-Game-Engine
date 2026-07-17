@@ -19,6 +19,8 @@ int main() {
             graphicsEngine.render();
             graphicsEngine.finishFrame();
 
+            graphicsEngine.printHFAILEDoutput();
+
             frameEnd = steady_clock::now();
             std::this_thread::sleep_for(std::chrono::nanoseconds(1'000'000'000L / fps) - (frameEnd - frameStart));
         }

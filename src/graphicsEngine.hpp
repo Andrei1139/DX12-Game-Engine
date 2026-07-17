@@ -5,6 +5,7 @@
 #include <d3dcompiler.h>
 #include <wrl.h>
 #include <iostream>
+#include <stacktrace>
 #include "window.hpp"
 
 using Microsoft::WRL::ComPtr;
@@ -13,15 +14,14 @@ class GraphicsEngine {
     public:
         GraphicsEngine(const EngineWindow& window);
         ~GraphicsEngine() {
-            if (syncBeforeClosing) {
-                finishFrame();
-            }
-
+            commandList->Close();
             CloseHandle(fenceEventHandle);
         }
 
-        void finishFrame();
         void render();
+        void finishFrame() {idleUntilCommandQueueFinished(); swapSCBuffers();}
+
+        void printHFAILEDoutput();
 
     private:
         const EngineWindow &window;
@@ -48,7 +48,12 @@ class GraphicsEngine {
         ComPtr<ID3D12PipelineState> pipelineState;
 
         ComPtr<ID3D12Resource> vertexBuffer;
+        ComPtr<ID3D12Resource> intermediaryVertexResource;
         D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
+
+        ComPtr<ID3D12Resource> indexBuffer;
+        ComPtr<ID3D12Resource> intermediaryIndexResource;
+        D3D12_INDEX_BUFFER_VIEW indexBufferView;
 
         ComPtr<ID3D12Fence> fenceInterface;
         unsigned long long fenceValue = 1;
@@ -67,9 +72,18 @@ class GraphicsEngine {
         void prepareShaders();
         void configurePipeline();
         void createVertexBuffer();
+        void createIndexBuffer();
         void prepareFenceSystem();
-        void printHFAILEDoutput();
+
+        void initGPUOnlyBuffer(UINT64 width, void *data, ID3D12Resource **finalResource ,ID3D12Resource **intermResource);
+
+        void resetCommandStructures();
+        void executeCommands() {commandList->Close();
+                                ID3D12CommandList *auxCmdListArray[] = {commandList.Get()};
+                                commandQueue->ExecuteCommandLists(1, auxCmdListArray);}
+
+        void idleUntilCommandQueueFinished();
+        inline void swapSCBuffers() {currBuffer = 1 - currBuffer;}
 
         HRESULT res;
-
 };

@@ -20,14 +20,6 @@ LRESULT CALLBACK EngineWindow::WindowProc(HWND windowHandle, UINT msgCode, WPARA
         case WM_DESTROY:
             PostQuitMessage(0);
             return 0;
-
-        case WM_SIZING: {
-            RECT *windowData = reinterpret_cast<RECT *>(lParam);
-
-            engineWindow->width = windowData->right - windowData->left;
-            engineWindow->height = windowData->bottom - windowData->top;
-            return 0;
-        }
     }
 
     return DefWindowProc(windowHandle, msgCode, wParam, lParam);
@@ -54,7 +46,7 @@ EngineWindow::EngineWindow(int width, int height, LPCSTR barName) {
         0,
         windowClassName,
         barName,
-        WS_OVERLAPPEDWINDOW,
+        WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX & ~WS_THICKFRAME,
         (screenWidth - width) / 2, (screenHeight - height) / 2 , width , height,
         NULL, NULL,
         currAppInstanceHandle,

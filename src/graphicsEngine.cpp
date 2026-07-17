@@ -28,8 +28,7 @@ GraphicsEngine::GraphicsEngine(const EngineWindow& window): window(window) {
     prepareShaders();
     configurePipeline();
     createVertexBuffer();
-
-    prepareFenceSystem();
+    createIndexBuffer();
 }
 
 void GraphicsEngine::backgroundPreparations() {
@@ -51,6 +50,8 @@ void GraphicsEngine::backgroundPreparations() {
         printHFAILEDoutput();
         throw std::runtime_error("CreateDXGIFactory1 failed\n");
     }
+
+    prepareFenceSystem();
 }
 
 void GraphicsEngine::initCommandSystem() {
@@ -205,7 +206,10 @@ void GraphicsEngine::configurePipeline() {
 }
 
 void GraphicsEngine::createVertexBuffer() {
-    // Vertex buffer
+    // Initial reset command structs
+    resetCommandStructures();
+
+    // Vertex data
     float vertices[3][6] = {{0.0f, 0.25f, 0.0f, 1.0f, 0.0f, 0.0f},
                             {0.25f, -0.25f, 0.0f, 0.0f, 1.0f, 0.0f},
                             {-0.25f, -0.25f, 0.0f, 0.0f, 0.0f, 1.0f}};
@@ -216,36 +220,38 @@ void GraphicsEngine::createVertexBuffer() {
     heapProperties.CreationNodeMask = 1;
     heapProperties.VisibleNodeMask = 1;
 
-    D3D12_RESOURCE_DESC vertexBufferResResc = {};
-    vertexBufferResResc.Width = sizeof(vertices);
-    vertexBufferResResc.Height = 1;
-    vertexBufferResResc.DepthOrArraySize = 1;
-    vertexBufferResResc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-    vertexBufferResResc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-    vertexBufferResResc.MipLevels = 1;
-    vertexBufferResResc.SampleDesc.Count = 1;
-    vertexBufferResResc.SampleDesc.Quality = 0;
+    initGPUOnlyBuffer(sizeof(vertices), vertices, vertexBuffer.GetAddressOf(), intermediaryVertexResource.GetAddressOf());
 
-    res = deviceInterface->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &vertexBufferResResc, D3D12_RESOURCE_STATE_GENERIC_READ,
-                                                   NULL, IID_PPV_ARGS(vertexBuffer.GetAddressOf()));
-    if (FAILED(res)) {
-        printHFAILEDoutput();
-        throw std::runtime_error("CreateCommittedResource failed for vertex buffer\n");
-    }
-
-    D3D12_RANGE range = {0, 0};
-    void *vertexData;
-    res = vertexBuffer->Map(0, &range, &vertexData);
-    if (FAILED(res)) {
-        printHFAILEDoutput();
-        throw std::runtime_error("Map failed for vertex buffer\n");
-    }
-    memcpy(vertexData, vertices, sizeof(vertices));
-    vertexBuffer->Unmap(0, NULL);
+    executeCommands();
 
     vertexBufferView.BufferLocation = vertexBuffer->GetGPUVirtualAddress();
     vertexBufferView.SizeInBytes = sizeof(vertices);
     vertexBufferView.StrideInBytes = sizeof(vertices[0]);
+
+    idleUntilCommandQueueFinished();
+}
+
+void GraphicsEngine::createIndexBuffer() {
+    resetCommandStructures();
+
+    // Index data
+    UINT32 indices[3] = {0, 1, 2};
+
+    // Preparing heap to upload for index buffer
+    D3D12_HEAP_PROPERTIES heapProperties = {};
+    heapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
+    heapProperties.CreationNodeMask = 1;
+    heapProperties.VisibleNodeMask = 1;
+
+    initGPUOnlyBuffer(sizeof(indices), indices, indexBuffer.GetAddressOf(), intermediaryIndexResource.GetAddressOf());
+
+    executeCommands();
+
+    indexBufferView.BufferLocation = indexBuffer->GetGPUVirtualAddress();
+    indexBufferView.SizeInBytes = sizeof(indices);
+    indexBufferView.Format = DXGI_FORMAT_R32_UINT;
+
+    idleUntilCommandQueueFinished();
 }
 
 void GraphicsEngine::prepareFenceSystem() {
@@ -263,17 +269,7 @@ void GraphicsEngine::prepareFenceSystem() {
 }
 
 void GraphicsEngine::render() {
-    // Reset command structs
-    res = commandAllocator->Reset();
-    if (FAILED(res)) {
-        printHFAILEDoutput();
-        throw std::runtime_error("Reset failed for command allocator\n");
-    }
-    res = commandList->Reset(commandAllocator.Get(), pipelineState.Get());
-    if (FAILED(res)) {
-        printHFAILEDoutput();
-        throw std::runtime_error("Reset failed for command list\n");
-    }
+    resetCommandStructures();
 
     commandList->SetGraphicsRootSignature(rootSignature.Get());
     commandList->RSSetViewports(1, &viewport);
@@ -295,16 +291,14 @@ void GraphicsEngine::render() {
     commandList->ClearRenderTargetView(*currDescriptorHandle, clearColor, 0, NULL);
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
-    commandList->DrawInstanced(3, 1, 0, 0);
+    commandList->IASetIndexBuffer(&indexBufferView);
+    commandList->DrawIndexedInstanced(3, 1, 0, 0, 0);
 
     resourceBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
     resourceBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
     commandList->ResourceBarrier(1, &resourceBarrier);
 
-    commandList->Close();
-
-    ID3D12CommandList *auxCmdListArray[] = {commandList.Get()};
-    commandQueue->ExecuteCommandLists(1, auxCmdListArray);
+    executeCommands();
 
     res = swapChain->Present(0, 0);
     if (FAILED(res)) {
@@ -313,7 +307,8 @@ void GraphicsEngine::render() {
     }
 }
 
-void GraphicsEngine::finishFrame() {
+void GraphicsEngine::idleUntilCommandQueueFinished() {
+    // Rudimentary syncing method
     auto currFence = fenceValue;
     res = commandQueue->Signal(fenceInterface.Get(), currFence);
     if (FAILED(res)) {
@@ -332,17 +327,13 @@ void GraphicsEngine::finishFrame() {
 
         WaitForSingleObject(fenceEventHandle, INFINITE);
     }
-
-    currBuffer = 1 - currBuffer;
 }
 
 void GraphicsEngine::printHFAILEDoutput() {
     ComPtr<ID3D12InfoQueue> infoQueue;
     if (!FAILED(deviceInterface.As(&infoQueue))) {
         UINT64 count = infoQueue->GetNumStoredMessages();
-
-        for (auto i = 0; i < count; i++)
-        {
+        for (auto i = 0; i < count; i++) {
             SIZE_T size = 0;
             infoQueue->GetMessage(i, NULL, &size);
 
@@ -355,5 +346,73 @@ void GraphicsEngine::printHFAILEDoutput() {
         }
 
         infoQueue->ClearStoredMessages();
+    }
+}
+
+void GraphicsEngine::initGPUOnlyBuffer(UINT64 width, void *data, ID3D12Resource **finalResource ,ID3D12Resource **intermResource) {
+    D3D12_RESOURCE_DESC desc = {};
+    desc.Width = width;
+    desc.Height = 1;
+    desc.DepthOrArraySize = 1;
+    desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    desc.MipLevels = 1;
+    desc.SampleDesc.Count = 1;
+    desc.SampleDesc.Quality = 0;
+
+    D3D12_HEAP_PROPERTIES heapProperties = {};
+    heapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
+    heapProperties.CreationNodeMask = 1;
+    heapProperties.VisibleNodeMask = 1;
+
+    res = deviceInterface->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ,
+                                                   NULL, IID_PPV_ARGS(intermResource));
+    if (FAILED(res)) {
+        printHFAILEDoutput();
+        throw std::runtime_error("CreateCommittedResource failed for intermediary buffer\n");
+    }
+
+    // Intermediary buffer - CPU access and will be used to transfer data to buffer through GPU
+    heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
+    res = deviceInterface->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COPY_DEST,
+                                                   NULL, IID_PPV_ARGS(finalResource));
+    if (FAILED(res)) {
+        printHFAILEDoutput();
+        throw std::runtime_error("CreateCommittedResource failed for vertex buffer\n");
+    }
+
+    // Map intermediary buffer memory
+    D3D12_RANGE range = {0, 0};
+    void *tempData;
+    res = (*intermResource)->Map(0, &range, &tempData);
+    if (FAILED(res)) {
+        printHFAILEDoutput();
+        throw std::runtime_error("Map failed for vertex buffer\n");
+    }
+    memcpy(tempData, data, width);
+    (*intermResource)->Unmap(0, NULL);
+
+    
+    commandList->CopyResource(*finalResource, *intermResource);
+
+    D3D12_RESOURCE_BARRIER resourceBarrier = {};
+    resourceBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    resourceBarrier.Transition.pResource = *finalResource;
+    resourceBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+    resourceBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
+    resourceBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    commandList->ResourceBarrier(1, &resourceBarrier);
+}
+
+void GraphicsEngine::resetCommandStructures() {
+    res = commandAllocator->Reset();
+    if (FAILED(res)) {
+        printHFAILEDoutput();
+        throw std::runtime_error("Reset failed for command allocator\n");
+    }
+    res = commandList->Reset(commandAllocator.Get(), pipelineState.Get());
+    if (FAILED(res)) {
+        printHFAILEDoutput();
+        throw std::runtime_error("Reset failed for command list\n");
     }
 }
