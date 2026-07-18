@@ -4,7 +4,16 @@
 
 /* */
 
-GraphicsEngine::GraphicsEngine(const EngineWindow& window): window(window) {
+static void printXMMatrix(DirectX::XMMATRIX mat) {
+    for (int i = 0; i < 4; ++i) {
+        auto &row = mat.r[i];
+
+        std::cout << DirectX::XMVectorGetX(row) << " " << DirectX::XMVectorGetY(row) << " " << DirectX::XMVectorGetZ(row) << " " <<
+                     DirectX::XMVectorGetW(row) << "\n";
+    }
+}
+
+GraphicsEngine::GraphicsEngine(const EngineWindow &window, const Camera &camera): window(window), camera(camera) {
     // Viewport and scissor rect setup
     viewport.TopLeftX = 0;
     viewport.TopLeftY = 0;
@@ -29,6 +38,7 @@ GraphicsEngine::GraphicsEngine(const EngineWindow& window): window(window) {
     configurePipeline();
     createVertexBuffer();
     createIndexBuffer();
+    createCTBuffer();
 }
 
 void GraphicsEngine::backgroundPreparations() {
@@ -138,7 +148,20 @@ void GraphicsEngine::createRenderTarget() {
 
 void GraphicsEngine::createRootSignature() {
     // Create root signatures and pipeline state
+    D3D12_DESCRIPTOR_RANGE CTBDescRange = {};
+    CTBDescRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+    CTBDescRange.NumDescriptors = 1;
+    CTBDescRange.BaseShaderRegister = 0;
+
+    D3D12_ROOT_PARAMETER CTBParameter;
+    CTBParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    CTBParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+    CTBParameter.DescriptorTable.NumDescriptorRanges = 1;
+    CTBParameter.DescriptorTable.pDescriptorRanges = &CTBDescRange;
+
     D3D12_ROOT_SIGNATURE_DESC rootSignDesc = {};
+    rootSignDesc.NumParameters = 1;
+    rootSignDesc.pParameters = &CTBParameter;
     rootSignDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
     ComPtr<ID3DBlob> signature, error;
@@ -191,7 +214,7 @@ void GraphicsEngine::configurePipeline() {
     pipelineStateDesc.pRootSignature = rootSignature.Get();
     pipelineStateDesc.PS = {pixelShader->GetBufferPointer(), pixelShader->GetBufferSize()};
     pipelineStateDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-    pipelineStateDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+    pipelineStateDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
     pipelineStateDesc.RasterizerState.DepthClipEnable = true;
     pipelineStateDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
     pipelineStateDesc.SampleDesc.Count = 1;
@@ -214,13 +237,7 @@ void GraphicsEngine::createVertexBuffer() {
                             {0.25f, -0.25f, 0.0f, 0.0f, 1.0f, 0.0f},
                             {-0.25f, -0.25f, 0.0f, 0.0f, 0.0f, 1.0f}};
 
-    // Preparing heap to upload for vertex buffer
-    D3D12_HEAP_PROPERTIES heapProperties = {};
-    heapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
-    heapProperties.CreationNodeMask = 1;
-    heapProperties.VisibleNodeMask = 1;
-
-    initGPUOnlyBuffer(sizeof(vertices), vertices, vertexBuffer.GetAddressOf(), intermediaryVertexResource.GetAddressOf());
+    initVertexOrIndexBuffer(sizeof(vertices), vertices, vertexBuffer.GetAddressOf(), intermediaryVertexResource.GetAddressOf());
 
     executeCommands();
 
@@ -237,13 +254,7 @@ void GraphicsEngine::createIndexBuffer() {
     // Index data
     UINT32 indices[3] = {0, 1, 2};
 
-    // Preparing heap to upload for index buffer
-    D3D12_HEAP_PROPERTIES heapProperties = {};
-    heapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
-    heapProperties.CreationNodeMask = 1;
-    heapProperties.VisibleNodeMask = 1;
-
-    initGPUOnlyBuffer(sizeof(indices), indices, indexBuffer.GetAddressOf(), intermediaryIndexResource.GetAddressOf());
+    initVertexOrIndexBuffer(sizeof(indices), indices, indexBuffer.GetAddressOf(), intermediaryIndexResource.GetAddressOf(), true);
 
     executeCommands();
 
@@ -252,6 +263,30 @@ void GraphicsEngine::createIndexBuffer() {
     indexBufferView.Format = DXGI_FORMAT_R32_UINT;
 
     idleUntilCommandQueueFinished();
+}
+
+void GraphicsEngine::createCTBuffer() {
+    initCTBuffer(256, CTBuffer.GetAddressOf());
+    updateCTBuffer();
+
+    D3D12_DESCRIPTOR_HEAP_DESC CTBHeapDesc;
+    CTBHeapDesc.NumDescriptors = 1;
+    CTBHeapDesc.NodeMask = 0;
+    CTBHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    CTBHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    res = deviceInterface->CreateDescriptorHeap(&CTBHeapDesc, IID_PPV_ARGS(CTBHeap.GetAddressOf()));
+    if (FAILED(res)) {
+        printHFAILEDoutput();
+        throw std::runtime_error("CreateDescriptorHeap failed for constant buffer\n");
+    }
+
+    CTBDescriptor = CTBHeap->GetCPUDescriptorHandleForHeapStart();
+
+    D3D12_CONSTANT_BUFFER_VIEW_DESC CTBDesc = {};
+    CTBDesc.BufferLocation = CTBuffer->GetGPUVirtualAddress();
+    CTBDesc.SizeInBytes = 256;
+
+    deviceInterface->CreateConstantBufferView(&CTBDesc, CTBDescriptor);
 }
 
 void GraphicsEngine::prepareFenceSystem() {
@@ -268,10 +303,18 @@ void GraphicsEngine::prepareFenceSystem() {
     }
 }
 
+void GraphicsEngine::update() {
+    updateCTBuffer();
+}
+
 void GraphicsEngine::render() {
     resetCommandStructures();
 
+    // Bind constant buffer
     commandList->SetGraphicsRootSignature(rootSignature.Get());
+    commandList->SetDescriptorHeaps(1, CTBHeap.GetAddressOf());
+    commandList->SetGraphicsRootDescriptorTable(0, CTBHeap->GetGPUDescriptorHandleForHeapStart());
+
     commandList->RSSetViewports(1, &viewport);
     commandList->RSSetScissorRects(1, &scissorRect);
 
@@ -287,7 +330,7 @@ void GraphicsEngine::render() {
     auto currDescriptorHandle = (currBuffer == 0) ? &RTVHandleBufferZero : &RTVHandleBufferOne;
     commandList->OMSetRenderTargets(1, currDescriptorHandle, false, NULL);
 
-    const float clearColor[] = { 0.5f, 0.5f, 1.0f, 1.0f };
+    const float clearColor[] = { 0.0f, 0.0f, 0.0f, 1.0f };
     commandList->ClearRenderTargetView(*currDescriptorHandle, clearColor, 0, NULL);
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
@@ -329,27 +372,8 @@ void GraphicsEngine::idleUntilCommandQueueFinished() {
     }
 }
 
-void GraphicsEngine::printHFAILEDoutput() {
-    ComPtr<ID3D12InfoQueue> infoQueue;
-    if (!FAILED(deviceInterface.As(&infoQueue))) {
-        UINT64 count = infoQueue->GetNumStoredMessages();
-        for (auto i = 0; i < count; i++) {
-            SIZE_T size = 0;
-            infoQueue->GetMessage(i, NULL, &size);
-
-            std::vector<char> bytes(size);
-            auto* msg = reinterpret_cast<D3D12_MESSAGE*>(bytes.data());
-
-            infoQueue->GetMessage(i, msg, &size);
-
-            printf("%s\n", msg->pDescription);
-        }
-
-        infoQueue->ClearStoredMessages();
-    }
-}
-
-void GraphicsEngine::initGPUOnlyBuffer(UINT64 width, void *data, ID3D12Resource **finalResource ,ID3D12Resource **intermResource) {
+void GraphicsEngine::initVertexOrIndexBuffer(UINT64 width, void *data, ID3D12Resource **finalResource,
+                                             ID3D12Resource **intermResource, bool isIndexBuffer) {
     D3D12_RESOURCE_DESC desc = {};
     desc.Width = width;
     desc.Height = 1;
@@ -378,20 +402,11 @@ void GraphicsEngine::initGPUOnlyBuffer(UINT64 width, void *data, ID3D12Resource 
                                                    NULL, IID_PPV_ARGS(finalResource));
     if (FAILED(res)) {
         printHFAILEDoutput();
-        throw std::runtime_error("CreateCommittedResource failed for vertex buffer\n");
+        throw std::runtime_error("CreateCommittedResource failed\n");
     }
 
     // Map intermediary buffer memory
-    D3D12_RANGE range = {0, 0};
-    void *tempData;
-    res = (*intermResource)->Map(0, &range, &tempData);
-    if (FAILED(res)) {
-        printHFAILEDoutput();
-        throw std::runtime_error("Map failed for vertex buffer\n");
-    }
-    memcpy(tempData, data, width);
-    (*intermResource)->Unmap(0, NULL);
-
+    copyDataToBuffer(data, width, intermResource);
     
     commandList->CopyResource(*finalResource, *intermResource);
 
@@ -399,9 +414,69 @@ void GraphicsEngine::initGPUOnlyBuffer(UINT64 width, void *data, ID3D12Resource 
     resourceBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     resourceBarrier.Transition.pResource = *finalResource;
     resourceBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
-    resourceBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
+    resourceBarrier.Transition.StateAfter = (isIndexBuffer) ? D3D12_RESOURCE_STATE_INDEX_BUFFER : D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
     resourceBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     commandList->ResourceBarrier(1, &resourceBarrier);
+}
+
+void GraphicsEngine::initCTBuffer(UINT64 dataLen, ID3D12Resource **buffer) {
+    D3D12_RESOURCE_DESC desc = {};
+    desc.Width = (dataLen + 255) & ~255; // Set width as multiple of 256 LARGER OR EQUAL to dataLen
+    desc.Height = 1;
+    desc.DepthOrArraySize = 1;
+    desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    desc.MipLevels = 1;
+    desc.SampleDesc.Count = 1;
+    desc.SampleDesc.Quality = 0;
+
+    D3D12_HEAP_PROPERTIES heapProperties = {};
+    heapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
+    heapProperties.CreationNodeMask = 1;
+    heapProperties.VisibleNodeMask = 1;
+
+    res = deviceInterface->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ,
+                                                   NULL, IID_PPV_ARGS(buffer));
+    if (FAILED(res)) {
+        printHFAILEDoutput();
+        throw std::runtime_error("CreateCommittedResource failed for CTBuffer\n");
+    }
+}
+
+void GraphicsEngine::updateCTBuffer() {
+    DirectX::XMMATRIX worldMat = DirectX::XMMatrixTransformation(DirectX::XMVectorZero(),
+                                                                 DirectX::XMVectorZero(),
+                                                                 DirectX::XMVectorSet(1.0f, 1.0f, 1.0f, 0.0f),
+                                                                 DirectX::XMVectorZero(),
+                                                                 DirectX::XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f),
+                                                                 DirectX::XMVectorSet(0.0f, 0.2f, 1.0f, 0.0f));
+        
+    float sinRotX = std::sin(camera.getRotX());
+    float sinRotY = std::sin(camera.getRotY());
+    float cosRotX = std::cos(camera.getRotX());
+    float cosRotY = std::cos(camera.getRotY());
+    DirectX::XMMATRIX viewMat = DirectX::XMMatrixLookToLH(DirectX::XMVectorSet(camera.getX(), camera.getY(), camera.getZ(), 1.0f),
+                                                          DirectX::XMVectorSet(sinRotY * cosRotX, -sinRotX, cosRotY * cosRotX, 1.0f),
+                                                          DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f));
+                                                          
+    DirectX::XMMATRIX projMat = DirectX::XMMatrixPerspectiveFovLH(camera.getFOV(),
+                                                               camera.getAspectRatio(),
+                                                               0.1f, 1000.0f);
+
+    DirectX::XMMATRIX product = DirectX::XMMatrixMultiply(DirectX::XMMatrixMultiply(worldMat, viewMat), projMat);
+
+    copyDataToBuffer(&product, sizeof(worldMat), CTBuffer.GetAddressOf());
+}
+
+void GraphicsEngine::copyDataToBuffer(void *data, UINT64 dataLen, ID3D12Resource **buffer) {
+    void *tempData;
+    res = (*buffer)->Map(0, NULL, &tempData);
+    if (FAILED(res)) {
+        printHFAILEDoutput();
+        throw std::runtime_error("Map failed\n");
+    }
+    memcpy(tempData, data, dataLen);
+    (*buffer)->Unmap(0, NULL);
 }
 
 void GraphicsEngine::resetCommandStructures() {
@@ -414,5 +489,25 @@ void GraphicsEngine::resetCommandStructures() {
     if (FAILED(res)) {
         printHFAILEDoutput();
         throw std::runtime_error("Reset failed for command list\n");
+    }
+}
+
+void GraphicsEngine::printHFAILEDoutput() {
+    ComPtr<ID3D12InfoQueue> infoQueue;
+    if (!FAILED(deviceInterface.As(&infoQueue))) {
+        UINT64 count = infoQueue->GetNumStoredMessages();
+        for (auto i = 0; i < count; i++) {
+            SIZE_T size = 0;
+            infoQueue->GetMessage(i, NULL, &size);
+
+            std::vector<char> bytes(size);
+            auto* msg = reinterpret_cast<D3D12_MESSAGE*>(bytes.data());
+
+            infoQueue->GetMessage(i, msg, &size);
+
+            printf("%s\n", msg->pDescription);
+        }
+
+        infoQueue->ClearStoredMessages();
     }
 }
