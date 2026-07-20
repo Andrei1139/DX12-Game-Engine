@@ -1,4 +1,5 @@
 #pragma once
+#include "utils.hpp"
 
 constexpr float PI = static_cast<float>(3.1415926535);
 
@@ -20,9 +21,9 @@ class Camera {
 
         // Movement: vertically absolute and horizontally relative
         void move(float dx, float dy, float dz) {float sinRotY = std::sin(getRotY()); float cosRotY = std::cos(getRotY());
-                                                 x += dx / movementDamper * cosRotY + dz / movementDamper * sinRotY;
-                                                 y += dy / movementDamper;
-                                                 z += -dx / movementDamper * sinRotY + dz / movementDamper * cosRotY;}
+                                                 x += dx / NORM(movementDamper) * cosRotY + dz / NORM(movementDamper) * sinRotY;
+                                                 y += dy / NORM(movementDamper);
+                                                 z += -dx / NORM(movementDamper) * sinRotY + dz / NORM(movementDamper) * cosRotY;}
 
         float getX() const {return x;}
         float getY() const {return y;}
@@ -41,7 +42,7 @@ class Camera {
         float rotX = 0, rotY = 0;
         float aspectRatio = 0, FOV = 45;
 
-        int movementDamper = 20;
-        int sensitivityDamper = 200;
+        float movementDamper = 0.1f;
+        float sensitivityDamper = 400.0f;
         float verticalRotationBuffer = 0.01f;
 };

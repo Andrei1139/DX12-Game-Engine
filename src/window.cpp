@@ -19,11 +19,11 @@ LRESULT CALLBACK EngineWindow::WindowProc(HWND windowHandle, UINT msgCode, WPARA
             GetRawInputData((HRAWINPUT)lParam, RID_INPUT, (void *)&rawInputData, &rawInputDataSize, sizeof(RAWINPUTHEADER));
 
             if (rawInputData.header.dwType == RIM_TYPEMOUSE) {
-                int xPos = rawInputData.data.mouse.lLastX;
-                int yPos = rawInputData.data.mouse.lLastY;
+                int xDir = rawInputData.data.mouse.lLastX;
+                int yDir = rawInputData.data.mouse.lLastY;
 
-                engineWindow->modifyX(xPos);
-                engineWindow->modifyY(yPos);
+                engineWindow->modifyX(xDir);
+                engineWindow->modifyY(yDir);
             }
 
             break;
