@@ -7,8 +7,12 @@
 #include <wrl.h>
 #include <iostream>
 #include <cmath>
+#include <bitset>
+#include <vector>
+#include <memory>
 #include "camera.hpp"
 #include "window.hpp"
+#include "resourceManager.hpp"
 
 using Microsoft::WRL::ComPtr;
 
@@ -52,18 +56,12 @@ class GraphicsEngine {
         ComPtr<ID3DBlob> vertexShader, pixelShader;
         ComPtr<ID3D12PipelineState> pipelineState;
 
-        ComPtr<ID3D12DescriptorHeap> CTBHeap;
-        D3D12_CPU_DESCRIPTOR_HANDLE CTBDescriptor;
-        ComPtr<ID3D12Resource> CTBuffer;
-        ComPtr<ID3D12Resource> intermediaryCTResource;
+        // ComPtr<ID3D12DescriptorHeap> CTBHeap;
+        // D3D12_CPU_DESCRIPTOR_HANDLE CTBDescriptor;
+        // ComPtr<ID3D12Resource> CTBuffer;
+        // ComPtr<ID3D12Resource> intermediaryCTResource;
 
-        ComPtr<ID3D12Resource> vertexBuffer;
-        ComPtr<ID3D12Resource> intermediaryVertexResource;
-        D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
-
-        ComPtr<ID3D12Resource> indexBuffer;
-        ComPtr<ID3D12Resource> intermediaryIndexResource;
-        D3D12_INDEX_BUFFER_VIEW indexBufferView;
+        std::unique_ptr<ResourceManager> resourceManager;
 
         ComPtr<ID3D12Fence> fenceInterface;
         unsigned long long fenceValue = 1;
@@ -81,13 +79,9 @@ class GraphicsEngine {
         void createRootSignature();
         void prepareShaders();
         void configurePipeline();
-        void createVertexBuffer();
-        void createIndexBuffer();
         void createCTBuffer();
         void prepareFenceSystem();
 
-        void initVertexOrIndexBuffer(UINT64 width, void *data, ID3D12Resource **finalResource,
-                                     ID3D12Resource **intermResource, bool isIndexBuffer = false);
         void initCTBuffer(UINT64 width, ID3D12Resource **buffer);
         void copyDataToBuffer(void *data, UINT64 dataLen, ID3D12Resource **buffer);
 

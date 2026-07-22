@@ -3,7 +3,8 @@ project(GameEngine VERSION 0.1.0 LANGUAGES C CXX)
 
 add_executable(GameEngine src/main.cpp
     src/window.cpp
-    src/graphicsEngine.cpp)
+    src/graphicsEngine.cpp
+    src/resourceManager.cpp)
 
 target_link_libraries(GameEngine d3d12.lib dxgi.lib d3dcompiler.lib)
 

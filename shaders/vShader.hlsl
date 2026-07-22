@@ -1,5 +1,5 @@
-cbuffer matBuffer {
-    float4x4 worldMatrix: register(b0);
+cbuffer matBuffer: register(b0) {
+    float4x4 worldViewProjMatrix;
 }
 
 struct VS_IN {
@@ -14,7 +14,7 @@ struct VS_OUT {
 
 VS_OUT main(VS_IN input) {
     VS_OUT output;
-    output.pos = mul(worldMatrix, float4(input.pos.x, input.pos.y, input.pos.z, 1.0));
+    output.pos = mul(worldViewProjMatrix, float4(input.pos.x, input.pos.y, input.pos.z, 1.0));
     output.col = input.col;
 
     return output;
