@@ -1,7 +1,8 @@
 #include "resourceManager.hpp"
 
-void ResourceManager::addModel(Model model) {
-    models.emplace_back(model);
+void ResourceManager::addObject(Object object){
+    objects.emplace_back(object);
+    const Model &model = object.getModel();
 
     const auto *vertices = model.getVertices();
     for (int i = 0; i < model.getNumVertices(); ++i) {
@@ -35,9 +36,11 @@ void ResourceManager::addModel(Model model) {
 // }
 
 void ResourceManager::initVertexProcessing() {
+    // Using first buffers in lists - future dynamic distribution of data possible this way
     auto &intermediaryBuffer = intermediaryBuffers.at(0);
     auto &vertexBuffer = vertexBuffers.at(0);
 
+    // All data contained in singular buffers
     createBuffer(aggregateVertexList.size() * sizeof(Vertex), D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, intermediaryBuffer.GetAddressOf());
     createBuffer(aggregateVertexList.size() * sizeof(Vertex), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COPY_DEST, vertexBuffer.GetAddressOf());
 
@@ -73,11 +76,13 @@ void ResourceManager::initIndexProcessing() {
 void ResourceManager::initCTBufferProcessing() {
     auto &CTBuffer = constantBuffers.at(0);
 
-    // UINT64 modelsCTData = (models.size() * sizeof(DirectX::XMMATRIX) + 255) & ~255;
-    createBuffer(512, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, CTBuffer.GetAddressOf());
+    // Load all CT data with enough padding to be multiple of 256
+    paddedCTDataSize = PADDED_SIZE(sizeof(DirectX::XMMATRIX)) * objects.size();
+    paddedCTElementSize = PADDED_SIZE(sizeof(DirectX::XMMATRIX));
+    createBuffer(paddedCTDataSize, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, CTBuffer.GetAddressOf());
 
     D3D12_DESCRIPTOR_HEAP_DESC CTBHeapDesc = {};
-    CTBHeapDesc.NumDescriptors = models.size();
+    CTBHeapDesc.NumDescriptors = objects.size();
     CTBHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     CTBHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     res = deviceInterface->CreateDescriptorHeap(&CTBHeapDesc, IID_PPV_ARGS(CTDescriptorHeap.GetAddressOf()));
@@ -87,25 +92,26 @@ void ResourceManager::initCTBufferProcessing() {
     }
 
     D3D12_CONSTANT_BUFFER_VIEW_DESC CTBDesc = {};
-    CTBDesc.SizeInBytes = 256;
+    CTBDesc.SizeInBytes = paddedCTElementSize;
+    CTBDesc.BufferLocation = CTBuffer->GetGPUVirtualAddress();
     D3D12_CPU_DESCRIPTOR_HANDLE currDescriptorHandle = CTDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
     
-    for (int i = 0; i < models.size(); ++i) {
-        CTBDesc.BufferLocation = CTBuffer->GetGPUVirtualAddress() + i * 256;
+    for (int i = 0; i < objects.size(); ++i) {
         deviceInterface->CreateConstantBufferView(&CTBDesc, currDescriptorHandle);
         currDescriptorHandle.ptr += deviceInterface->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        CTBDesc.BufferLocation += paddedCTElementSize;
     }
 }
 
 void ResourceManager::updateCTBuffer() {
-    byte *data = new byte[512];
-    for (int i = 0; i < models.size(); ++i) {
+    byte *data = new byte[paddedCTDataSize];
+    for (int i = 0; i < objects.size(); ++i) {
         DirectX::XMMATRIX worldMat = DirectX::XMMatrixTransformation(DirectX::XMVectorZero(),
                                                                      DirectX::XMVectorZero(),
-                                                                     DirectX::XMVectorSet(1.0f, 1.0f, 1.0f, 0.0f),
+                                                                     objects[i].getScaling(),
                                                                      DirectX::XMVectorZero(),
-                                                                     DirectX::XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f),
-                                                                     DirectX::XMVectorSet(0.0f, 0.2f, 1.0f, 0.0f));
+                                                                     objects[i].getRotation(),
+                                                                     objects[i].getPosition());
             
         float sinRotX = std::sin(camera.getRotX());
         float sinRotY = std::sin(camera.getRotY());
@@ -121,10 +127,10 @@ void ResourceManager::updateCTBuffer() {
 
         DirectX::XMMATRIX product = DirectX::XMMatrixMultiply(DirectX::XMMatrixMultiply(worldMat, viewMat), projMat);
 
-        memcpy(data + i * 256, &product, sizeof(product));
+        memcpy(data + i * paddedCTElementSize, &product, sizeof(product));
     }
 
-    copyDataToBuffer(data, 512, constantBuffers.at(0).GetAddressOf());
+    copyDataToBuffer(data, paddedCTDataSize, constantBuffers.at(0).GetAddressOf());
 }
 
 void ResourceManager::createBuffer(UINT64 width, D3D12_HEAP_TYPE heapType, D3D12_RESOURCE_STATES resourceState, ID3D12Resource **resource) {

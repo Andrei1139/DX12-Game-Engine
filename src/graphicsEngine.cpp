@@ -32,18 +32,19 @@ GraphicsEngine::GraphicsEngine(const EngineWindow &window, const Camera &camera)
 
     createSwapChain();
 
-    Model model({Vertex{0.0f, 0.25f, 0.0f, 1.0f, 0.0f, 0.0f},
+    Object object(Model({Vertex{0.0f, 0.25f, 0.0f, 1.0f, 0.0f, 0.0f},
                  Vertex{0.25f, -0.25f, 0.0f, 0.0f, 1.0f, 0.0f},
                  Vertex{-0.25f, -0.25f, 0.0f, 0.0f, 0.0f, 1.0f}},
-                 {0, 1, 2});
+                 {0, 1, 2}));
 
-    Model model2({Vertex{0.0f, 0.9f, 0.0f, 1.0f, 0.0f, 0.0f},
-                 Vertex{0.1f, 0.7f, 0.0f, 1.0f, 0.0f, 0.0f},
-                 Vertex{-0.1f, 0.7f, 0.0f, 1.0f, 0.0f, 0.0f}},
-                 {0, 1, 2});
+    Object object2(Model({Vertex{0.0f, 0.1f, 0.0f, 1.0f, 0.0f, 0.0f},
+                 Vertex{0.1f, -0.1f, 0.0f, 1.0f, 0.0f, 0.0f},
+                 Vertex{-0.1f, -0.1f, 0.0f, 1.0f, 0.0f, 0.0f}},
+                 {0, 1, 2}));
+    object2.setPosY(1.8f);
 
-    resourceManager->addModel(model);
-    resourceManager->addModel(model2);
+    resourceManager->addObject(object);
+    resourceManager->addObject(object2);
 
     resetCommandStructures();
     resourceManager->createResources();

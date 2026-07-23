@@ -2,19 +2,21 @@
 #include <vector>
 #include <d3d12.h>
 #include "camera.hpp"
-#include "model.hpp"
+#include "object.hpp"
+
+#define PADDED_SIZE(x) ((x + 255) & ~255)
 
 class ResourceManager {
     public:
         ResourceManager(const Camera &pCamera, Microsoft::WRL::ComPtr<ID3D12Device> &pDeviceInterface,
                         Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> &pCommandList):
                         camera(pCamera), deviceInterface{pDeviceInterface}, commandList{pCommandList} {}
-        void addModel(Model model);
+        void addObject(Object object);
         void createResources() {initVertexProcessing(); initIndexProcessing(); initCTBufferProcessing();}
         void updateResources() {updateCTBuffer();}
 
-        const Model &getModelAt(int index) {return models.at(index);}
-        size_t getNumModels() const {return models.size();}
+        const Model &getModelAt(int index) {return objects.at(index).getModel();}
+        size_t getNumModels() const {return objects.size();}
 
         D3D12_VERTEX_BUFFER_VIEW *getVertexBufferView() {return &vertexBufferView;}
         D3D12_INDEX_BUFFER_VIEW *getIndexBufferView() {return &indexBufferView;}
@@ -29,10 +31,11 @@ class ResourceManager {
         void copyDataToBuffer(void *data, UINT64 dataLen, ID3D12Resource **buffer);
         void transition(D3D12_RESOURCE_STATES stateBefore, D3D12_RESOURCE_STATES stateAfter, ID3D12Resource *resource);
 
-        std::vector<Model> models;
+        std::vector<Object> objects;
         std::vector<Vertex> aggregateVertexList;
         std::vector<UINT32> aggregateIndexList;
-        std::vector<DirectX::XMFLOAT3> aggregateCoordsList;
+
+        UINT64 paddedCTDataSize = 0, paddedCTElementSize;
 
         std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> vertexBuffers = std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>>(1);
         std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> indexBuffers = std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>>(1);
