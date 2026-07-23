@@ -10,8 +10,8 @@ class Model {
         const Vertex *getVertices() const {return vertices.data();}
         const uint32_t *getIndices() const {return indices.data();}
 
-        size_t getNumVertices() const {return vertices.size();}
-        size_t getNumIndices() const {return indices.size();}
+        UINT getNumVertices() const {return static_cast<UINT>(vertices.size());}
+        UINT getNumIndices() const {return static_cast<UINT>(indices.size());}
     private:
         const std::vector<Vertex> vertices;
         const std::vector<uint32_t> indices;

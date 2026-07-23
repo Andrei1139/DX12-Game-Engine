@@ -16,7 +16,7 @@ int main() {
         GraphicsEngine graphicsEngine(window, camera);
 
         Timer timer(FPS);
-        timer.setFrameDisplay(false);
+        timer.setFrameDisplay(true);
 
         while (window.isOpen()) {
             window.handleEvents();

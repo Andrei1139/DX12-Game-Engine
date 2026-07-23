@@ -5,35 +5,15 @@ void ResourceManager::addObject(Object object){
     const Model &model = object.getModel();
 
     const auto *vertices = model.getVertices();
-    for (int i = 0; i < model.getNumVertices(); ++i) {
+    for (UINT i = 0; i < model.getNumVertices(); ++i) {
         aggregateVertexList.push_back(vertices[i]);
     }
 
     const auto *indices = model.getIndices();
-    for (int i = 0; i < model.getNumIndices(); ++i) {
+    for (UINT i = 0; i < model.getNumIndices(); ++i) {
         aggregateIndexList.push_back(indices[i]);
     }
 }
-
-// D3D12_VERTEX_BUFFER_VIEW *ResourceManager::getVertexBufferView(int index) {
-//     vertexBufferView.BufferLocation = vertexBuffers.at(0)->GetGPUVirtualAddress();
-//     for (int i = 0; i < index; ++i) {
-//         vertexBufferView.BufferLocation += models.at(i).getNumVertices() * sizeof(Vertex);
-//     }
-//     vertexBufferView.SizeInBytes = static_cast<UINT>(aggregateVertexList.size() * sizeof(Vertex));
-
-//     return &vertexBufferView;
-// }
-
-// D3D12_INDEX_BUFFER_VIEW *ResourceManager::getIndexBufferView(int index) {
-//     indexBufferView.BufferLocation = indexBuffers.at(0)->GetGPUVirtualAddress();
-//     for (int i = 0; i < index; ++i) {
-//         indexBufferView.BufferLocation += models.at(i).getNumIndices() * sizeof(UINT32);
-//     }
-//     indexBufferView.SizeInBytes = static_cast<UINT>(aggregateIndexList.size() * sizeof(UINT32));
-
-//     return &indexBufferView;
-// }
 
 void ResourceManager::initVertexProcessing() {
     // Using first buffers in lists - future dynamic distribution of data possible this way
@@ -82,7 +62,7 @@ void ResourceManager::initCTBufferProcessing() {
     createBuffer(paddedCTDataSize, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, CTBuffer.GetAddressOf());
 
     D3D12_DESCRIPTOR_HEAP_DESC CTBHeapDesc = {};
-    CTBHeapDesc.NumDescriptors = objects.size();
+    CTBHeapDesc.NumDescriptors = static_cast<UINT>(objects.size());
     CTBHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     CTBHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     res = deviceInterface->CreateDescriptorHeap(&CTBHeapDesc, IID_PPV_ARGS(CTDescriptorHeap.GetAddressOf()));
@@ -92,7 +72,7 @@ void ResourceManager::initCTBufferProcessing() {
     }
 
     D3D12_CONSTANT_BUFFER_VIEW_DESC CTBDesc = {};
-    CTBDesc.SizeInBytes = paddedCTElementSize;
+    CTBDesc.SizeInBytes = (UINT)paddedCTElementSize;
     CTBDesc.BufferLocation = CTBuffer->GetGPUVirtualAddress();
     D3D12_CPU_DESCRIPTOR_HANDLE currDescriptorHandle = CTDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
     
@@ -101,6 +81,49 @@ void ResourceManager::initCTBufferProcessing() {
         currDescriptorHandle.ptr += deviceInterface->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
         CTBDesc.BufferLocation += paddedCTElementSize;
     }
+}
+
+void ResourceManager::initDepthStencilProcessing() {
+    D3D12_RESOURCE_DESC desc = {};
+    desc.Width = width;
+    desc.Height = height;
+    desc.DepthOrArraySize = 1;
+    desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    desc.MipLevels = 1;
+    desc.SampleDesc.Count = 1;
+    desc.SampleDesc.Quality = 0;
+    desc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+    D3D12_HEAP_PROPERTIES heapProperties = {};
+    heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
+    heapProperties.CreationNodeMask = 1;
+    heapProperties.VisibleNodeMask = 1;
+
+    // Optimization for depth testing
+    D3D12_CLEAR_VALUE DSClearValue = {};
+    DSClearValue.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    DSClearValue.DepthStencil.Depth = 1.0f;
+
+    res = deviceInterface->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &desc,
+          D3D12_RESOURCE_STATE_COMMON, &DSClearValue, IID_PPV_ARGS(depthStencil.GetAddressOf()));
+
+    // Create descriptor heap
+    D3D12_DESCRIPTOR_HEAP_DESC DSDescriptorHeapDesc;
+    DSDescriptorHeapDesc.NumDescriptors = 1;
+    DSDescriptorHeapDesc.NodeMask = 0;
+    DSDescriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+    DSDescriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+    res = deviceInterface->CreateDescriptorHeap(&DSDescriptorHeapDesc, IID_PPV_ARGS(DSVHeap.GetAddressOf()));
+    if (FAILED(res)) {
+        printHFAILEDoutputGlobal(deviceInterface);
+        throw std::runtime_error("CreateDescriptorHeap failed for depth stencil\n");
+    }
+
+    deviceInterface->CreateDepthStencilView(depthStencil.Get(), NULL, DSVHeap->GetCPUDescriptorHandleForHeapStart());
+
+    transition(D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE, depthStencil.Get());
 }
 
 void ResourceManager::updateCTBuffer() {

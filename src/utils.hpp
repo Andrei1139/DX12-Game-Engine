@@ -1,6 +1,6 @@
 #pragma once
 
-#define FPS 60
+#define FPS 200
 #define NORM(DAMPER) (DAMPER * FPS)
 
 #include <iostream>

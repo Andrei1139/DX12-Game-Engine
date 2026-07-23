@@ -47,19 +47,15 @@ class GraphicsEngine {
         ComPtr<ID3D12DescriptorHeap> RTVHeap;
         ComPtr<ID3D12DescriptorHeap> DSVHeap;
 
+        ComPtr<ID3D12Resource> depthStencilTexture;
         ComPtr<ID3D12Resource> swapChainBuffers[2];
         UINT currBuffer;
-        D3D12_CPU_DESCRIPTOR_HANDLE RTVHandleBufferZero, RTVHandleBufferOne, DSVHandle;
+        D3D12_CPU_DESCRIPTOR_HANDLE RTVHandleBufferZero, RTVHandleBufferOne;
 
         ComPtr<ID3D12RootSignature> rootSignature;
 
         ComPtr<ID3DBlob> vertexShader, pixelShader;
         ComPtr<ID3D12PipelineState> pipelineState;
-
-        // ComPtr<ID3D12DescriptorHeap> CTBHeap;
-        // D3D12_CPU_DESCRIPTOR_HANDLE CTBDescriptor;
-        // ComPtr<ID3D12Resource> CTBuffer;
-        // ComPtr<ID3D12Resource> intermediaryCTResource;
 
         std::unique_ptr<ResourceManager> resourceManager;
 

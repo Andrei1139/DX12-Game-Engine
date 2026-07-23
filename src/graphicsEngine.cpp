@@ -25,26 +25,25 @@ GraphicsEngine::GraphicsEngine(const EngineWindow &window, const Camera &camera)
     scissorRect.right = static_cast<LONG>(window.getWidth());
     scissorRect.bottom = static_cast<LONG>(window.getHeight());
 
-    resourceManager = std::make_unique<ResourceManager>(camera, deviceInterface, commandList);
+    resourceManager = std::make_unique<ResourceManager>(camera, deviceInterface, commandList, window.getWidth(), window.getHeight());
 
     backgroundPreparations();
     initCommandSystem();
 
     createSwapChain();
 
-    Object object(Model({Vertex{0.0f, 0.25f, 0.0f, 1.0f, 0.0f, 0.0f},
-                 Vertex{0.25f, -0.25f, 0.0f, 0.0f, 1.0f, 0.0f},
-                 Vertex{-0.25f, -0.25f, 0.0f, 0.0f, 0.0f, 1.0f}},
-                 {0, 1, 2}));
-
-    Object object2(Model({Vertex{0.0f, 0.1f, 0.0f, 1.0f, 0.0f, 0.0f},
-                 Vertex{0.1f, -0.1f, 0.0f, 1.0f, 0.0f, 0.0f},
-                 Vertex{-0.1f, -0.1f, 0.0f, 1.0f, 0.0f, 0.0f}},
-                 {0, 1, 2}));
-    object2.setPosY(1.8f);
-
+    Object object(Model(
+        {Vertex{-0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 0.0f},
+         Vertex{-0.5f, -0.5f, 0.5f, 0.0f, 1.0f, 0.0f},
+         Vertex{-0.5f, 0.5f, -0.5f, 0.0f, 0.0f, 1.0f},
+         Vertex{-0.5f, 0.5f, 0.5f, 1.0f, 1.0f, 0.0f},
+         Vertex{0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 1.0f},
+         Vertex{0.5f, -0.5f, 0.5f, 0.0f, 1.0f, 1.0f},
+         Vertex{0.5f, 0.5f, -0.5f, 1.0f, 1.0f, 1.0f},
+         Vertex{0.5f, 0.5f, 0.5f, 0.2f, 0.2f, 0.2f}},
+        {0, 1, 2, 1, 2, 3, 1, 5, 7, 1, 3, 7, 4, 5, 7, 4, 6, 7, 0, 2, 4, 2, 4, 6, 2, 6, 3, 3, 6, 7, 0, 4, 5, 0, 1, 5}
+    ));
     resourceManager->addObject(object);
-    resourceManager->addObject(object2);
 
     resetCommandStructures();
     resourceManager->createResources();
@@ -55,9 +54,6 @@ GraphicsEngine::GraphicsEngine(const EngineWindow &window, const Camera &camera)
     createRootSignature();
     prepareShaders();
     configurePipeline();
-    // createVertexBuffer();
-    // createIndexBuffer();
-    // createCTBuffer();
 }
 
 void GraphicsEngine::backgroundPreparations() {
@@ -130,10 +126,10 @@ void GraphicsEngine::createSwapChain() {
 }
 
 void GraphicsEngine::createRenderTarget() {
-    // Get descriptor sizes
+    // Get descriptor size
     auto RTVDescriptorSize = deviceInterface->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
-    // Create descriptor heaps
+    // Create descriptor heap
     D3D12_DESCRIPTOR_HEAP_DESC RTVHeapDesc;
     RTVHeapDesc.NumDescriptors = 2;
     RTVHeapDesc.NodeMask = 0;
@@ -224,8 +220,10 @@ void GraphicsEngine::configurePipeline() {
         pipelineStateDesc.BlendState.RenderTarget[i].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
     }
 
-    pipelineStateDesc.DepthStencilState.DepthEnable = false;
     pipelineStateDesc.DepthStencilState.StencilEnable = false;
+    pipelineStateDesc.DepthStencilState.DepthEnable = true;
+    pipelineStateDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+    pipelineStateDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
     pipelineStateDesc.IBStripCutValue = D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_DISABLED;
     pipelineStateDesc.InputLayout = {inputElementDescs, _countof(inputElementDescs)};
     pipelineStateDesc.NumRenderTargets = 1;
@@ -239,6 +237,7 @@ void GraphicsEngine::configurePipeline() {
     pipelineStateDesc.SampleDesc.Count = 1;
     pipelineStateDesc.SampleMask = UINT_MAX;
     pipelineStateDesc.VS = {vertexShader->GetBufferPointer(), vertexShader->GetBufferSize()};
+    pipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
 
     res = deviceInterface->CreateGraphicsPipelineState(&pipelineStateDesc, IID_PPV_ARGS(pipelineState.GetAddressOf()));
     if (FAILED(res)) {
@@ -269,9 +268,9 @@ void GraphicsEngine::update() {
 void GraphicsEngine::render() {
     resetCommandStructures();
 
-    // Bind constant buffer
+    // Prepare descriptor heaps and handles
     commandList->SetGraphicsRootSignature(rootSignature.Get());
-    auto **descriptorHeap = resourceManager->getDescriptorHeap();
+    auto **descriptorHeap = resourceManager->getCTDescriptorHeap();
     commandList->SetDescriptorHeaps(1, descriptorHeap);
     D3D12_GPU_DESCRIPTOR_HANDLE CTDescriptorHandle = (*descriptorHeap)->GetGPUDescriptorHandleForHeapStart();
 
@@ -288,21 +287,26 @@ void GraphicsEngine::render() {
     commandList->ResourceBarrier(1, &resourceBarrier);
 
     auto currDescriptorHandle = (currBuffer == 0) ? &RTVHandleBufferZero : &RTVHandleBufferOne;
-    commandList->OMSetRenderTargets(1, currDescriptorHandle, false, NULL);
+    auto *DSDescriptorHeap = resourceManager->getDSDescriptorHeap();
+    commandList->OMSetRenderTargets(1, currDescriptorHandle, false, &DSDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
 
     const float clearColor[] = { 0.0f, 0.0f, 0.0f, 1.0f };
     commandList->ClearRenderTargetView(*currDescriptorHandle, clearColor, 0, NULL);
-    commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    commandList->ClearDepthStencilView(DSDescriptorHeap->GetCPUDescriptorHandleForHeapStart(),
+    D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, NULL);
 
+    commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     commandList->IASetVertexBuffers(0, 1, resourceManager->getVertexBufferView());
     commandList->IASetIndexBuffer(resourceManager->getIndexBufferView());
     int vertexStart = 0, indexStart = 0;
     for (int i = 0; i < resourceManager->getNumModels(); ++i) {
+        const auto &model = resourceManager->getModelAt(i);
+
         commandList->SetGraphicsRootDescriptorTable(0, CTDescriptorHandle);
-        commandList->DrawIndexedInstanced(3, 1, indexStart, vertexStart, 0);
+        commandList->DrawIndexedInstanced(model.getNumIndices(), 1, indexStart, vertexStart, 0);
         CTDescriptorHandle.ptr += deviceInterface->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-        vertexStart += resourceManager->getModelAt(i).getNumVertices();
-        indexStart += resourceManager->getModelAt(i).getNumIndices();
+        vertexStart += model.getNumVertices();
+        indexStart += model.getNumIndices();
     }
 
     resourceBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
