@@ -5,6 +5,17 @@
 #include "graphicsEngine.hpp"
 
 int main() {
+    // Needed for Windows Imagining Component functionality
+    #if (_WIN32_WINNT >= 0x0A00 /*_WIN32_WINNT_WIN10*/)
+    Microsoft::WRL::Wrappers::RoInitializeWrapper initialize(RO_INIT_MULTITHREADED);
+    if (FAILED(initialize))
+        return -1;
+    #else
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (FAILED(hr))
+        // error
+    #endif
+
     int width = GetSystemMetrics(SM_CXSCREEN);
     int height = GetSystemMetrics(SM_CYSCREEN);
     // int width = 800;
@@ -16,7 +27,7 @@ int main() {
         GraphicsEngine graphicsEngine(window, camera);
 
         Timer timer(FPS);
-        timer.setFrameDisplay(true);
+        timer.setFrameDisplay(false);
 
         while (window.isOpen()) {
             window.handleEvents();

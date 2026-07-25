@@ -18,8 +18,13 @@ class Object {
 
         DirectX::XMVECTOR getPosition() {return DirectX::XMVectorSet(x, y, z, 0.0f);}
         DirectX::XMVECTOR getScaling() {return DirectX::XMVectorSet(scaleX, scaleY, scaleZ, 0.0f);}
-        DirectX::XMVECTOR getRotation() {return DirectX::XMVectorSet(rotX, rotY, rotZ, 0.0f);}
+        DirectX::XMVECTOR getRotation() {return DirectX::XMQuaternionRotationRollPitchYaw(rotX, rotY, rotZ);}
         const Model &getModel() {return model;}
+
+        void update() {
+            rotY += 1.0f / NORM(1.0f);
+        }
+
     private:
         Model model;
         float x = 0.0f, y = 0.2f, z = 1.0f;

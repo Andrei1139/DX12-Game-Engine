@@ -12,8 +12,12 @@
 
 typedef struct {
     float x, y, z;
-    float r, g, b;
+    float u, v;
 } Vertex;
+
+static bool operator==(const Vertex &v1, const Vertex &v2) {
+    return v1.x == v2.x && v1.y == v2.y && v1.z == v2.z && v1.u == v2.u && v1.v == v2.v; 
+}
 
 static void printHFAILEDoutputGlobal(Microsoft::WRL::ComPtr<ID3D12Device> &deviceInterface) {
     Microsoft::WRL::ComPtr<ID3D12InfoQueue> infoQueue;

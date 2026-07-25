@@ -1,5 +1,14 @@
 #include "resourceManager.hpp"
 
+void ResourceManager::createResources(ID3D12CommandQueue *queue) {
+    initVertexProcessing();
+    initIndexProcessing();
+    initDescriptorHeap();
+    initCTBufferProcessing();
+    initTextureProcessing(queue);
+    initDepthStencilProcessing();
+}
+
 void ResourceManager::addObject(Object object){
     objects.emplace_back(object);
     const Model &model = object.getModel();
@@ -53,6 +62,52 @@ void ResourceManager::initIndexProcessing() {
     indexBufferView.Format = DXGI_FORMAT_R32_UINT;
 }
 
+void ResourceManager::initDescriptorHeap() {
+    D3D12_DESCRIPTOR_HEAP_DESC CTBHeapDesc = {};
+    CTBHeapDesc.NumDescriptors = static_cast<UINT>(2 * objects.size());
+    CTBHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    CTBHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    res = deviceInterface->CreateDescriptorHeap(&CTBHeapDesc, IID_PPV_ARGS(CTSRDescriptorHeap.GetAddressOf()));
+    if (FAILED(res)) {
+        printHFAILEDoutputGlobal(deviceInterface);
+        throw std::runtime_error("CreateDescriptorHeap failed\n");
+    }
+}
+
+void ResourceManager::initTextureProcessing(ID3D12CommandQueue *queue) {
+    // Prepare texture uploaoder
+    RUB.Begin();
+
+    textures.resize(objects.size());
+    for (int i = 0; i < objects.size(); ++i) {
+        wchar_t filePath[100];
+        swprintf(filePath, 100, L"assets/object%d.png", i);
+        res = DirectX::CreateWICTextureFromFile(deviceInterface.Get(), RUB, filePath, textures.at(i).GetAddressOf());
+        if (FAILED(res)) {
+            printHFAILEDoutputGlobal(deviceInterface);
+            throw std::runtime_error("CreateWICTextureFromFile failed");
+        }
+    }
+
+    // Send texture creation commands straight to queue
+    RUB.End(queue).wait();
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC SRVDesc = {};
+    SRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    SRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    SRVDesc.Texture2D.MipLevels = -1; // Default
+    D3D12_CPU_DESCRIPTOR_HANDLE currDescriptorHandle = CTSRDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+    currDescriptorHandle.ptr += deviceInterface->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    
+    for (int i = 0; i < objects.size(); ++i) {
+        // WICTextureFile loader chooses format automatically on a per texture basis, so it must be extracted automatically too here
+        SRVDesc.Format = textures.at(i)->GetDesc().Format;
+        
+        deviceInterface->CreateShaderResourceView(textures.at(i).Get(), &SRVDesc, currDescriptorHandle);
+        currDescriptorHandle.ptr += 2 * deviceInterface->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    }
+}
+
 void ResourceManager::initCTBufferProcessing() {
     auto &CTBuffer = constantBuffers.at(0);
 
@@ -61,24 +116,14 @@ void ResourceManager::initCTBufferProcessing() {
     paddedCTElementSize = PADDED_SIZE(sizeof(DirectX::XMMATRIX));
     createBuffer(paddedCTDataSize, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, CTBuffer.GetAddressOf());
 
-    D3D12_DESCRIPTOR_HEAP_DESC CTBHeapDesc = {};
-    CTBHeapDesc.NumDescriptors = static_cast<UINT>(objects.size());
-    CTBHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    CTBHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-    res = deviceInterface->CreateDescriptorHeap(&CTBHeapDesc, IID_PPV_ARGS(CTDescriptorHeap.GetAddressOf()));
-    if (FAILED(res)) {
-        printHFAILEDoutputGlobal(deviceInterface);
-        throw std::runtime_error("CreateDescriptorHeap failed for constant buffer\n");
-    }
-
     D3D12_CONSTANT_BUFFER_VIEW_DESC CTBDesc = {};
     CTBDesc.SizeInBytes = (UINT)paddedCTElementSize;
     CTBDesc.BufferLocation = CTBuffer->GetGPUVirtualAddress();
-    D3D12_CPU_DESCRIPTOR_HANDLE currDescriptorHandle = CTDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+    D3D12_CPU_DESCRIPTOR_HANDLE currDescriptorHandle = CTSRDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
     
     for (int i = 0; i < objects.size(); ++i) {
         deviceInterface->CreateConstantBufferView(&CTBDesc, currDescriptorHandle);
-        currDescriptorHandle.ptr += deviceInterface->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        currDescriptorHandle.ptr += 2 * deviceInterface->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
         CTBDesc.BufferLocation += paddedCTElementSize;
     }
 }
@@ -127,10 +172,14 @@ void ResourceManager::initDepthStencilProcessing() {
 }
 
 void ResourceManager::updateCTBuffer() {
+    for (Object &obj: objects) {
+        obj.update();
+    }
+
     byte *data = new byte[paddedCTDataSize];
     for (int i = 0; i < objects.size(); ++i) {
         DirectX::XMMATRIX worldMat = DirectX::XMMatrixTransformation(DirectX::XMVectorZero(),
-                                                                     DirectX::XMVectorZero(),
+                                                                     DirectX::XMQuaternionIdentity(),
                                                                      objects[i].getScaling(),
                                                                      DirectX::XMVectorZero(),
                                                                      objects[i].getRotation(),

@@ -6,5 +6,8 @@ add_executable(GameEngine src/main.cpp
     src/graphicsEngine.cpp
     src/resourceManager.cpp)
 
-target_link_libraries(GameEngine d3d12.lib dxgi.lib d3dcompiler.lib)
+target_link_libraries(GameEngine PRIVATE d3d12.lib dxgi.lib d3dcompiler.lib DirectXTK12 runtimeobject.lib)
+
+add_subdirectory(${CMAKE_SOURCE_DIR}/libs/DirectXTK12 ${CMAKE_BINARY_DIR}/bin/CMake/DirectXTK12)
+
 

@@ -1,6 +1,9 @@
+Texture2D tex: register(t0);
+SamplerState samplerState: register(s0);
+
 struct PS_IN {
     float4 pos: SV_Position;
-    float3 col: COLOR;
+    float2 tex: TEXTURE;
 };
 
 struct PS_OUT {
@@ -9,7 +12,7 @@ struct PS_OUT {
 
 PS_OUT main(PS_IN input) {
     PS_OUT output;
-    output.col = float4(input.col.xyz, 1.0);
+    output.col = tex.Sample(samplerState, input.tex);
 
     return output;
 }

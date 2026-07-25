@@ -1,6 +1,9 @@
 #pragma once
 #include <vector>
+#include <cstdio>
 #include <d3d12.h>
+#include <WICTextureLoader.h>
+#include <ResourceUploadBatch.h>
 #include "camera.hpp"
 #include "object.hpp"
 
@@ -11,9 +14,13 @@ class ResourceManager {
         ResourceManager(const Camera &pCamera, Microsoft::WRL::ComPtr<ID3D12Device> &pDeviceInterface,
                         Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> &pCommandList,
                         int pWidth, int pHeight):
-                        camera(pCamera), deviceInterface{pDeviceInterface}, commandList{pCommandList}, width{pWidth}, height{pHeight} {}
+                        camera(pCamera), deviceInterface{pDeviceInterface},
+                        commandList{pCommandList},
+                        width{pWidth},
+                        height{pHeight},
+                        RUB(pDeviceInterface.Get()) {}
         void addObject(Object object);
-        void createResources() {initVertexProcessing(); initIndexProcessing(); initCTBufferProcessing(); initDepthStencilProcessing();}
+        void createResources(ID3D12CommandQueue *queue);
         void updateResources() {updateCTBuffer();}
 
         const Model &getModelAt(int index) {return objects.at(index).getModel();}
@@ -21,12 +28,14 @@ class ResourceManager {
 
         D3D12_VERTEX_BUFFER_VIEW *getVertexBufferView() {return &vertexBufferView;}
         D3D12_INDEX_BUFFER_VIEW *getIndexBufferView() {return &indexBufferView;}
-        ID3D12DescriptorHeap **getCTDescriptorHeap() {return CTDescriptorHeap.GetAddressOf();}
+        ID3D12DescriptorHeap **getCTSRDescriptorHeap() {return CTSRDescriptorHeap.GetAddressOf();}
         ID3D12DescriptorHeap *getDSDescriptorHeap() {return DSVHeap.Get();}
 
     private:
+        void initTextureProcessing(ID3D12CommandQueue *queue);
         void initVertexProcessing();
         void initIndexProcessing();
+        void initDescriptorHeap();
         void initCTBufferProcessing();
         void initDepthStencilProcessing();
 
@@ -48,11 +57,12 @@ class ResourceManager {
         std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> constantBuffers = std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>>(1);
         std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> intermediaryBuffers = std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>>(2);
         Microsoft::WRL::ComPtr<ID3D12Resource> depthStencil;
+        std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> textures;
+        DirectX::ResourceUploadBatch RUB;
 
         D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
         D3D12_INDEX_BUFFER_VIEW indexBufferView;
-        Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> CTDescriptorHeap, DSVHeap;
-
+        Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> CTSRDescriptorHeap, DSVHeap;
 
         const Camera &camera;
         Microsoft::WRL::ComPtr<ID3D12Device> &deviceInterface;

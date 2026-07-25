@@ -25,28 +25,34 @@ GraphicsEngine::GraphicsEngine(const EngineWindow &window, const Camera &camera)
     scissorRect.right = static_cast<LONG>(window.getWidth());
     scissorRect.bottom = static_cast<LONG>(window.getHeight());
 
+    backgroundPreparations();
     resourceManager = std::make_unique<ResourceManager>(camera, deviceInterface, commandList, window.getWidth(), window.getHeight());
 
-    backgroundPreparations();
     initCommandSystem();
-
     createSwapChain();
 
-    Object object(Model(
-        {Vertex{-0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 0.0f},
-         Vertex{-0.5f, -0.5f, 0.5f, 0.0f, 1.0f, 0.0f},
-         Vertex{-0.5f, 0.5f, -0.5f, 0.0f, 0.0f, 1.0f},
-         Vertex{-0.5f, 0.5f, 0.5f, 1.0f, 1.0f, 0.0f},
-         Vertex{0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 1.0f},
-         Vertex{0.5f, -0.5f, 0.5f, 0.0f, 1.0f, 1.0f},
-         Vertex{0.5f, 0.5f, -0.5f, 1.0f, 1.0f, 1.0f},
-         Vertex{0.5f, 0.5f, 0.5f, 0.2f, 0.2f, 0.2f}},
-        {0, 1, 2, 1, 2, 3, 1, 5, 7, 1, 3, 7, 4, 5, 7, 4, 6, 7, 0, 2, 4, 2, 4, 6, 2, 6, 3, 3, 6, 7, 0, 4, 5, 0, 1, 5}
-    ));
+    // Object object(Model(
+    //     {Vertex{-0.5f, -0.5f, -0.5f, 0.0f, 1.0f},
+    //      Vertex{-0.5f, -0.5f, 0.5f, 0.5f, 1.0f},
+    //      Vertex{-0.5f, 0.5f, -0.5f, 0.0f, 0.0f},
+    //      Vertex{-0.5f, 0.5f, 0.5f, 0.5f, 0.0f},
+    //      Vertex{0.5f, -0.5f, -0.5f, 0.5f, 1.0f},
+    //      Vertex{0.5f, -0.5f, 0.5f, 0.0f, 1.0f},
+    //      Vertex{0.5f, 0.5f, -0.5f, 0.5f, 0.0f},
+    //      Vertex{0.5f, 0.5f, 0.5f, 0.0f, 0.0f}},
+    //     {0, 1, 2, 1, 2, 3, 1, 5, 7, 1, 3, 7, 4, 5, 7, 4, 6, 7, 0, 2, 4, 2, 4, 6, 2, 6, 3, 3, 6, 7, 0, 4, 5, 0, 1, 5}
+    // ));
+
+    Model model0;
+    model0.addTriangle(Vertex{-0.5f, 0.5f, -0.5f, 0.0f, 0.0f}, // 0
+                       Vertex{0.5f, 0.5f, -0.5f, 1.0f, 0.0f}, // 1
+                       Vertex{-0.5f, -0.5f, -0.5f, 0.0f, 1.0f}); // 2
+    Object object(model0);
+          
     resourceManager->addObject(object);
 
     resetCommandStructures();
-    resourceManager->createResources();
+    resourceManager->createResources(commandQueue.Get());
     executeCommands();
     idleUntilCommandQueueFinished();
 
@@ -163,20 +169,39 @@ void GraphicsEngine::createRenderTarget() {
 
 void GraphicsEngine::createRootSignature() {
     // Create root signatures and pipeline state
-    D3D12_DESCRIPTOR_RANGE CTBDescRange = {};
-    CTBDescRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-    CTBDescRange.NumDescriptors = 1;
-    CTBDescRange.BaseShaderRegister = 0;
+    D3D12_DESCRIPTOR_RANGE descriptorRanges[2];
 
-    D3D12_ROOT_PARAMETER CTBParameter;
-    CTBParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-    CTBParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-    CTBParameter.DescriptorTable.NumDescriptorRanges = 1;
-    CTBParameter.DescriptorTable.pDescriptorRanges = &CTBDescRange;
+    descriptorRanges[0] = {};
+    descriptorRanges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+    descriptorRanges[0].NumDescriptors = 1;
+    descriptorRanges[0].BaseShaderRegister = 0;
+
+    descriptorRanges[1] = {};
+    descriptorRanges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    descriptorRanges[1].NumDescriptors = 1;
+    descriptorRanges[1].BaseShaderRegister = 0;
+    descriptorRanges[1].OffsetInDescriptorsFromTableStart = static_cast<UINT>(resourceManager->getNumModels());
+
+    D3D12_ROOT_PARAMETER rootParameter;
+    rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    rootParameter.DescriptorTable.NumDescriptorRanges = 2;
+    rootParameter.DescriptorTable.pDescriptorRanges = descriptorRanges;
+
+    D3D12_STATIC_SAMPLER_DESC samplerDesc = {}; // Needed for sampling texture colors
+    samplerDesc.AddressU = samplerDesc.AddressV = samplerDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+    samplerDesc.BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;
+    samplerDesc.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+    samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+    samplerDesc.MaxLOD = D3D12_FLOAT32_MAX;
+    samplerDesc.MinLOD = 0.0f;
+    samplerDesc.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_ROOT_SIGNATURE_DESC rootSignDesc = {};
     rootSignDesc.NumParameters = 1;
-    rootSignDesc.pParameters = &CTBParameter;
+    rootSignDesc.pParameters = &rootParameter;
+    rootSignDesc.NumStaticSamplers = 1;
+    rootSignDesc.pStaticSamplers = &samplerDesc;
     rootSignDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
     ComPtr<ID3DBlob> signature, error;
@@ -189,13 +214,17 @@ void GraphicsEngine::createRootSignature() {
 }
 
 void GraphicsEngine::prepareShaders() {
-    res = D3DCompileFromFile(L"shaders//vShader.hlsl", NULL, NULL, "main", "vs_5_0", 0, 0, vertexShader.GetAddressOf(), NULL);
+    ComPtr<ID3DBlob> shaderCompilerErrorMsg;
+    res = D3DCompileFromFile(L"shaders//vShader.hlsl", NULL, NULL, "main", "vs_5_1", 0, 0, vertexShader.GetAddressOf(), shaderCompilerErrorMsg.GetAddressOf());
     if (FAILED(res)) {
+        std::cout << static_cast<char *>(shaderCompilerErrorMsg->GetBufferPointer());
         printHFAILEDoutput();
         throw std::runtime_error("D3DCompileFromFile failed for vertex shader\n");
     }
-    res = D3DCompileFromFile(L"shaders//pShader.hlsl", NULL, NULL, "main", "ps_5_0", 0, 0, pixelShader.GetAddressOf(), NULL);
+
+    res = D3DCompileFromFile(L"shaders//pShader.hlsl", NULL, NULL, "main", "ps_5_1", 0, 0, pixelShader.GetAddressOf(), shaderCompilerErrorMsg.GetAddressOf());
     if (FAILED(res)) {
+        std::cout << static_cast<char *>(shaderCompilerErrorMsg->GetBufferPointer());
         printHFAILEDoutput();
         throw std::runtime_error("D3DCompileFromFile failed for pixel shader\n");
     }
@@ -205,7 +234,7 @@ void GraphicsEngine::configurePipeline() {
     // Setup Vertex Input Layout and pipeline state
     D3D12_INPUT_ELEMENT_DESC inputElementDescs[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+        {"TEXTURE", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
     };
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pipelineStateDesc = {};
@@ -270,7 +299,7 @@ void GraphicsEngine::render() {
 
     // Prepare descriptor heaps and handles
     commandList->SetGraphicsRootSignature(rootSignature.Get());
-    auto **descriptorHeap = resourceManager->getCTDescriptorHeap();
+    auto **descriptorHeap = resourceManager->getCTSRDescriptorHeap();
     commandList->SetDescriptorHeaps(1, descriptorHeap);
     D3D12_GPU_DESCRIPTOR_HANDLE CTDescriptorHandle = (*descriptorHeap)->GetGPUDescriptorHandleForHeapStart();
 
@@ -304,7 +333,7 @@ void GraphicsEngine::render() {
 
         commandList->SetGraphicsRootDescriptorTable(0, CTDescriptorHandle);
         commandList->DrawIndexedInstanced(model.getNumIndices(), 1, indexStart, vertexStart, 0);
-        CTDescriptorHandle.ptr += deviceInterface->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        CTDescriptorHandle.ptr += 2 * deviceInterface->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
         vertexStart += model.getNumVertices();
         indexStart += model.getNumIndices();
     }

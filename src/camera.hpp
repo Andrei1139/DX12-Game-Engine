@@ -38,7 +38,7 @@ class Camera {
         void print() const {std::cout << rotX << ", " << rotY << "\n";
                       std::cout << x << ", " << y << ", " << z << "\n";}
     private:
-        float x = 0, y = 0, z = 0;
+        float x = 0, y = 0, z = -1.0f;
         float rotX = 0, rotY = 0;
         float aspectRatio = 0, FOV = 45;
 
