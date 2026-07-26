@@ -22,7 +22,7 @@ class Object {
         const Model &getModel() {return model;}
 
         void update() {
-            rotY += 1.0f / NORM(1.0f);
+            // rotY += 1.0f / NORM(1.0f);
         }
 
     private:

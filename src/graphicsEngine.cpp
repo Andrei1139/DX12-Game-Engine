@@ -31,23 +31,9 @@ GraphicsEngine::GraphicsEngine(const EngineWindow &window, const Camera &camera)
     initCommandSystem();
     createSwapChain();
 
-    // Object object(Model(
-    //     {Vertex{-0.5f, -0.5f, -0.5f, 0.0f, 1.0f},
-    //      Vertex{-0.5f, -0.5f, 0.5f, 0.5f, 1.0f},
-    //      Vertex{-0.5f, 0.5f, -0.5f, 0.0f, 0.0f},
-    //      Vertex{-0.5f, 0.5f, 0.5f, 0.5f, 0.0f},
-    //      Vertex{0.5f, -0.5f, -0.5f, 0.5f, 1.0f},
-    //      Vertex{0.5f, -0.5f, 0.5f, 0.0f, 1.0f},
-    //      Vertex{0.5f, 0.5f, -0.5f, 0.5f, 0.0f},
-    //      Vertex{0.5f, 0.5f, 0.5f, 0.0f, 0.0f}},
-    //     {0, 1, 2, 1, 2, 3, 1, 5, 7, 1, 3, 7, 4, 5, 7, 4, 6, 7, 0, 2, 4, 2, 4, 6, 2, 6, 3, 3, 6, 7, 0, 4, 5, 0, 1, 5}
-    // ));
-
-    Model model0;
-    model0.addTriangle(Vertex{-0.5f, 0.5f, -0.5f, 0.0f, 0.0f}, // 0
-                       Vertex{0.5f, 0.5f, -0.5f, 1.0f, 0.0f}, // 1
-                       Vertex{-0.5f, -0.5f, -0.5f, 0.0f, 1.0f}); // 2
+    Model model0 = OBJLoader::loadModel("assets/cube.obj");
     Object object(model0);
+    object.setScaleX(0.5f).setScaleY(0.5f).setScaleZ(0.5f);
           
     resourceManager->addObject(object);
 
@@ -55,7 +41,6 @@ GraphicsEngine::GraphicsEngine(const EngineWindow &window, const Camera &camera)
     resourceManager->createResources(commandQueue.Get());
     executeCommands();
     idleUntilCommandQueueFinished();
-
     createRenderTarget();
     createRootSignature();
     prepareShaders();

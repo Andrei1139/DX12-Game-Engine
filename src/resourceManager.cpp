@@ -51,7 +51,7 @@ void ResourceManager::initIndexProcessing() {
     createBuffer(aggregateIndexList.size() * sizeof(UINT32), D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, intermediaryBuffer.GetAddressOf());
     createBuffer(aggregateIndexList.size() * sizeof(UINT32), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COPY_DEST, indexBuffer.GetAddressOf());
 
-    copyDataToBuffer(aggregateIndexList.data(), aggregateIndexList.size() * sizeof(Vertex), intermediaryBuffer.GetAddressOf());
+    copyDataToBuffer(aggregateIndexList.data(), aggregateIndexList.size() * sizeof(UINT32), intermediaryBuffer.GetAddressOf());
 
     commandList->CopyResource(indexBuffer.Get(), intermediaryBuffer.Get());
 
@@ -81,7 +81,9 @@ void ResourceManager::initTextureProcessing(ID3D12CommandQueue *queue) {
     textures.resize(objects.size());
     for (int i = 0; i < objects.size(); ++i) {
         wchar_t filePath[100];
-        swprintf(filePath, 100, L"assets/object%d.png", i);
+
+        // Prepare texture file path
+        swprintf(filePath, 100, L"assets/%s", objects.at(i).getModel().getTextureFileName().c_str());
         res = DirectX::CreateWICTextureFromFile(deviceInterface.Get(), RUB, filePath, textures.at(i).GetAddressOf());
         if (FAILED(res)) {
             printHFAILEDoutputGlobal(deviceInterface);

@@ -13,6 +13,7 @@
 #include "camera.hpp"
 #include "window.hpp"
 #include "resourceManager.hpp"
+#include "OBJLoader.hpp"
 
 using Microsoft::WRL::ComPtr;
 

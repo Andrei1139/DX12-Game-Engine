@@ -10,13 +10,17 @@
 #include <DirectXMath.h>
 #include <wrl.h>
 
+typedef struct {float x, y, z;} Position;
+typedef struct {float u, v;} Tex;
+typedef struct {float x, y, z;} Normal;
+
 typedef struct {
-    float x, y, z;
-    float u, v;
+    Position pos;
+    Tex tex;
 } Vertex;
 
 static bool operator==(const Vertex &v1, const Vertex &v2) {
-    return v1.x == v2.x && v1.y == v2.y && v1.z == v2.z && v1.u == v2.u && v1.v == v2.v; 
+    return v1.pos.x == v2.pos.x && v1.pos.y == v2.pos.y && v1.pos.z == v2.pos.z && v1.tex.u == v2.tex.u && v1.tex.v == v2.tex.v; 
 }
 
 static void printHFAILEDoutputGlobal(Microsoft::WRL::ComPtr<ID3D12Device> &deviceInterface) {

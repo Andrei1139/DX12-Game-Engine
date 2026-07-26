@@ -4,6 +4,14 @@
 
 class Model {
     public:
+        Model &addFace(std::vector<Vertex> vertices) {
+            for (int i = 1; i < vertices.size() - 1; ++i) {
+                addTriangle(vertices.at(0), vertices.at(i), vertices.at(i + 1));
+            }
+
+            return *this;
+        }
+
         Model &addTriangle(Vertex v1, Vertex v2, Vertex v3) {
             addVertex(v1);
             addVertex(v2);
@@ -17,9 +25,13 @@ class Model {
 
         UINT getNumVertices() const {return static_cast<UINT>(vertices.size());}
         UINT getNumIndices() const {return static_cast<UINT>(indices.size());}
+
+        void setTextureFileName(std::wstring pFileName) {texFileName = pFileName;}
+        std::wstring getTextureFileName() const {return texFileName;}
     private:
         std::vector<Vertex> vertices;
         std::vector<uint32_t> indices;
+        std::wstring texFileName = std::wstring(L"default.png");
 
         void addVertex(Vertex v) {
             UINT index = getNumVertices();

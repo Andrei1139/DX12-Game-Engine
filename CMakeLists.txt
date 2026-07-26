@@ -4,7 +4,8 @@ project(GameEngine VERSION 0.1.0 LANGUAGES C CXX)
 add_executable(GameEngine src/main.cpp
     src/window.cpp
     src/graphicsEngine.cpp
-    src/resourceManager.cpp)
+    src/resourceManager.cpp
+    src/OBJLoader.cpp)
 
 target_link_libraries(GameEngine PRIVATE d3d12.lib dxgi.lib d3dcompiler.lib DirectXTK12 runtimeobject.lib)
 
