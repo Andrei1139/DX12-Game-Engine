@@ -9,8 +9,8 @@ void ResourceManager::createResources(ID3D12CommandQueue *queue) {
     initDepthStencilProcessing();
 }
 
-void ResourceManager::addObject(Object object){
-    objects.emplace_back(object);
+void ResourceManager::addObject(Object &object){
+    objects.push_back(object);
     const Model &model = object.getModel();
 
     const auto *vertices = model.getVertices();

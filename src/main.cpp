@@ -29,6 +29,11 @@ int main() {
         Timer timer(FPS);
         timer.setFrameDisplay(false);
 
+        Object object;
+        object.setScaleX(0.5f).setScaleY(0.5f).setScaleZ(0.5f);
+        graphicsEngine.addObject(object, "giant_low_poly_tree.obj");
+
+        graphicsEngine.finishInitialization();
         while (window.isOpen()) {
             window.handleEvents();
 

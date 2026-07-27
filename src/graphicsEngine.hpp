@@ -25,6 +25,12 @@ class GraphicsEngine {
             CloseHandle(fenceEventHandle);
         }
 
+        void addObject(Object &object, const char *modelFileName) {
+            Model model = OBJLoader::loadModel(modelFileName);
+            object.setModel(model);
+            resourceManager->addObject(object);
+        }
+        void finishInitialization();
         void update();
         void render();
         void finishFrame() {idleUntilCommandQueueFinished(); swapSCBuffers();}

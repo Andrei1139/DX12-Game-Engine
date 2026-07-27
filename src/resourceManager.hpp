@@ -19,7 +19,7 @@ class ResourceManager {
                         width{pWidth},
                         height{pHeight},
                         RUB(pDeviceInterface.Get()) {}
-        void addObject(Object object);
+        void addObject(Object &object);
         void createResources(ID3D12CommandQueue *queue);
         void updateResources() {updateCTBuffer();}
 

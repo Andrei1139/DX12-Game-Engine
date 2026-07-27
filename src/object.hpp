@@ -4,8 +4,6 @@
 
 class Object {
     public:
-        Object(Model pModel): model{pModel} {}
-
         Object &setPosX(float pX) {x = pX; return *this;}
         Object &setPosY(float pY) {y = pY; return *this;}
         Object &setPosZ(float pZ) {z = pZ; return *this;}
@@ -15,6 +13,7 @@ class Object {
         Object &setRotX(float pX) {rotX = pX; return *this;}
         Object &setRotY(float pY) {rotY = pY; return *this;}
         Object &setRotZ(float pZ) {rotZ = pZ; return *this;}
+        void setModel(Model model) {this->model = model;}
 
         DirectX::XMVECTOR getPosition() {return DirectX::XMVectorSet(x, y, z, 0.0f);}
         DirectX::XMVECTOR getScaling() {return DirectX::XMVectorSet(scaleX, scaleY, scaleZ, 0.0f);}

@@ -1,12 +1,39 @@
 #include "OBJLoader.hpp"
 
-static void getTokens(char *line, std::vector<Token> &lineTokens) {
+static void getTokensInLine(char *line, std::vector<Token> &lineTokens) {
     std::istringstream ISS(line);
     std::string strToken;
 
     while (ISS >> strToken) {
         lineTokens.push_back(Token{strToken});
     }
+}
+
+static std::vector<std::vector<Token>> getTokensInFile(const char *fileName, bool optional = false) {
+    std::string filePath("assets/");
+    filePath.append(fileName);
+    std::ifstream fileStream(filePath);
+    if (!fileStream.is_open()) {
+        if (optional) return std::vector<std::vector<Token>>();
+        throw std::runtime_error("Failed to load file");
+    }
+
+    // Separate words/individual symbols/values into individual tokens
+    std::vector<std::vector<Token>> tokens;
+    char line[100];
+    while(!fileStream.eof()) {
+        tokens.push_back(std::vector<Token>());
+        
+        fileStream.getline(line, 100);
+        getTokensInLine(line, tokens.at(tokens.size() - 1));
+        
+        // Ignore spacing lines
+        if (tokens.at(tokens.size() - 1).size() == 0) {
+            tokens.pop_back();
+        }
+    }
+
+    return tokens;
 }
 
 static Vertex processIndexedVertex(const Token &token, std::vector<Position> &vertexPos,
@@ -39,33 +66,14 @@ static Vertex processIndexedVertex(const Token &token, std::vector<Position> &ve
     return vertex;
 }
 
-Model OBJLoader::loadModel(const char *filePath) {
+Model OBJLoader::loadModel(const char *fileName) {
     // File MUST have .obj extension
-    size_t pathLen = strlen(filePath);
-    if (strcmp(filePath + pathLen - 4, ".obj") != 0) {
+    size_t pathLen = strlen(fileName);
+    if (strcmp(fileName + pathLen - 4, ".obj") != 0) {
         throw std::runtime_error("Invalid file: format must be .obj");
     }
 
-    std::ifstream fileStream(filePath);
-    if (!fileStream.is_open()) {
-        throw std::runtime_error("Failed to load 3D model");
-    }
-
-    // Separate words/individual symbols/values into individual tokens
-    std::vector<std::vector<Token>> tokens;
-    char line[100];
-    while(!fileStream.eof()) {
-        tokens.push_back(std::vector<Token>());
-        
-        fileStream.getline(line, 100);
-        getTokens(line, tokens.at(tokens.size() - 1));
-        
-        // Ignore spacing lines
-        if (tokens.at(tokens.size() - 1).size() == 0) {
-            tokens.pop_back();
-        }
-    }
-
+    auto tokens = getTokensInFile(fileName);
     return OBJLoader::processModel(tokens);
 }
 
@@ -97,9 +105,32 @@ Model OBJLoader::processModel(const std::vector<std::vector<Token>> &tokens) {
 
             model.addFace(vertices);
         } else if (first.str == "mtllib") {
-            // TODO
+            loadModelMaterial(model, line.at(1).str.c_str());
         }
     }
 
     return model;
+}
+
+void OBJLoader::loadModelMaterial(Model &model, const char *fileName) {
+    // File MUST have .mtl extension
+    size_t pathLen = strlen(fileName);
+    if (strcmp(fileName + pathLen - 4, ".mtl") != 0) {
+        throw std::runtime_error("Invalid file: format must be .mtl");
+    }
+
+    auto tokens = getTokensInFile(fileName, true);
+    if (tokens.empty()) return;
+    OBJLoader::processModelMaterial(model, tokens);
+}
+
+void OBJLoader::processModelMaterial(Model &model, const std::vector<std::vector<Token>> &tokens) {
+    for (const std::vector<Token> line: tokens) {
+        auto &first = line.at(0);
+
+        if (first.str == "map_Kd") {
+            model.setTextureFileName(std::wstring(line.at(1).str.begin(), line.at(1).str.end()));
+            return;
+        }
+    }
 }

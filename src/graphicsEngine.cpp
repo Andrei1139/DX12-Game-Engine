@@ -30,17 +30,16 @@ GraphicsEngine::GraphicsEngine(const EngineWindow &window, const Camera &camera)
 
     initCommandSystem();
     createSwapChain();
+}
 
-    Model model0 = OBJLoader::loadModel("assets/cube.obj");
-    Object object(model0);
-    object.setScaleX(0.5f).setScaleY(0.5f).setScaleZ(0.5f);
-          
-    resourceManager->addObject(object);
-
+void GraphicsEngine::finishInitialization() {
+    // Resource management commands
     resetCommandStructures();
     resourceManager->createResources(commandQueue.Get());
     executeCommands();
     idleUntilCommandQueueFinished();
+
+    // Rest of initializations
     createRenderTarget();
     createRootSignature();
     prepareShaders();
