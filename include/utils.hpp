@@ -10,6 +10,8 @@
 #include <DirectXMath.h>
 #include <wrl.h>
 
+using Microsoft::WRL::ComPtr;
+
 typedef struct {float x, y, z;} Position;
 typedef struct {float u, v;} Tex;
 typedef struct {float x, y, z;} Normal;

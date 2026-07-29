@@ -1,15 +1,21 @@
-#include "resourceManager.hpp"
+#include "../include/resourceManager.hpp"
 
 void ResourceManager::createResources(ID3D12CommandQueue *queue) {
+    // Determine number of model subsections beforehand
+    for (auto &object: objects) {
+        numModelSections += object.getModel().getSections().size();
+    }
+
     initVertexProcessing();
     initIndexProcessing();
     initDescriptorHeap();
-    initCTBufferProcessing();
+    initMatrixCTBufferProcessing();
+    initLightingCTBufferProcessing();
     initTextureProcessing(queue);
     initDepthStencilProcessing();
 }
 
-void ResourceManager::addObject(Object &object){
+void ResourceManager::addObject(Object object){
     objects.push_back(object);
     const Model &model = object.getModel();
 
@@ -64,7 +70,7 @@ void ResourceManager::initIndexProcessing() {
 
 void ResourceManager::initDescriptorHeap() {
     D3D12_DESCRIPTOR_HEAP_DESC CTBHeapDesc = {};
-    CTBHeapDesc.NumDescriptors = static_cast<UINT>(2 * objects.size());
+    CTBHeapDesc.NumDescriptors = static_cast<UINT>(256);
     CTBHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     CTBHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     res = deviceInterface->CreateDescriptorHeap(&CTBHeapDesc, IID_PPV_ARGS(CTSRDescriptorHeap.GetAddressOf()));
@@ -72,22 +78,74 @@ void ResourceManager::initDescriptorHeap() {
         printHFAILEDoutputGlobal(deviceInterface);
         throw std::runtime_error("CreateDescriptorHeap failed\n");
     }
+
+    currDescriptorHandle = CTSRDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+}
+
+void ResourceManager::initMatrixCTBufferProcessing() {
+    auto &CTBuffer = constantBuffers.at(0);
+
+    // Load all CT data with enough padding to be multiple of 256
+    UINT64 paddedCTDataSize = PADDED_SIZE(sizeof(DirectX::XMMATRIX)) * objects.size();
+    UINT paddedCTElementSize = PADDED_SIZE(sizeof(DirectX::XMMATRIX));
+    createBuffer(paddedCTDataSize, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, CTBuffer.GetAddressOf());
+
+    D3D12_CONSTANT_BUFFER_VIEW_DESC CTBDesc = {};
+    CTBDesc.SizeInBytes = (UINT)paddedCTElementSize;
+    CTBDesc.BufferLocation = CTBuffer->GetGPUVirtualAddress();
+    
+    for (int i = 0; i < objects.size(); ++i) {
+        deviceInterface->CreateConstantBufferView(&CTBDesc, currDescriptorHandle);
+        currDescriptorHandle.ptr += deviceInterface->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        CTBDesc.BufferLocation += paddedCTElementSize;
+    }
+}
+
+void ResourceManager::initLightingCTBufferProcessing() {
+    auto &CTBuffer = constantBuffers.at(1);
+
+    // Load all CT data with enough padding to be multiple of 256
+    UINT64 paddedCTDataSize = PADDED_SIZE(sizeof(DirectX::XMFLOAT3)) * numModelSections;
+    UINT paddedCTElementSize = PADDED_SIZE(sizeof(DirectX::XMFLOAT3));
+    createBuffer(paddedCTDataSize, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, CTBuffer.GetAddressOf());
+
+    D3D12_CONSTANT_BUFFER_VIEW_DESC CTBDesc = {};
+    CTBDesc.SizeInBytes = (UINT)paddedCTElementSize;
+    CTBDesc.BufferLocation = CTBuffer->GetGPUVirtualAddress();
+    
+    for (int i = 0; i < numModelSections; ++i) {
+        deviceInterface->CreateConstantBufferView(&CTBDesc, currDescriptorHandle);
+        currDescriptorHandle.ptr += deviceInterface->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        CTBDesc.BufferLocation += paddedCTElementSize;
+    }
+
+    updateLightingCTBuffer();
 }
 
 void ResourceManager::initTextureProcessing(ID3D12CommandQueue *queue) {
-    // Prepare texture uploaoder
+    // Prepare texture uploader
     RUB.Begin();
 
-    textures.resize(objects.size());
-    for (int i = 0; i < objects.size(); ++i) {
+    int modelIndex = 0, modelSectionIndex = 0;
+    for (auto i = 0; i < numModelSections; ++i) {
         wchar_t filePath[100];
+        std::wstring textureFileName = objects.at(modelIndex).getModel().getSections().at(modelSectionIndex).textureFileName;
 
         // Prepare texture file path
-        swprintf(filePath, 100, L"assets/%s", objects.at(i).getModel().getTextureFileName().c_str());
-        res = DirectX::CreateWICTextureFromFile(deviceInterface.Get(), RUB, filePath, textures.at(i).GetAddressOf());
+        swprintf(filePath, 100, L"assets/%s", textureFileName.c_str());
+        
+        // Associate texture with texture name
+        textures.insert({textureFileName, Microsoft::WRL::ComPtr<ID3D12Resource>()});
+        res = DirectX::CreateWICTextureFromFile(deviceInterface.Get(), RUB, filePath, textures.at(textureFileName).GetAddressOf());
         if (FAILED(res)) {
             printHFAILEDoutputGlobal(deviceInterface);
             throw std::runtime_error("CreateWICTextureFromFile failed");
+        }
+
+        ++modelSectionIndex;
+        if (objects.at(modelIndex).getModel().getSections().size() == modelSectionIndex) {
+            modelSectionIndex = 0;
+            ++modelIndex;
         }
     }
 
@@ -98,35 +156,23 @@ void ResourceManager::initTextureProcessing(ID3D12CommandQueue *queue) {
     SRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     SRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     SRVDesc.Texture2D.MipLevels = -1; // Default
-    D3D12_CPU_DESCRIPTOR_HANDLE currDescriptorHandle = CTSRDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
-    currDescriptorHandle.ptr += deviceInterface->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-    
-    for (int i = 0; i < objects.size(); ++i) {
+
+    initSRVDescriptorHandle = currDescriptorHandle;
+
+    modelIndex = 0, modelSectionIndex = 0;
+    for (int i = 0; i < numModelSections; ++i) {
         // WICTextureFile loader chooses format automatically on a per texture basis, so it must be extracted automatically too here
-        SRVDesc.Format = textures.at(i)->GetDesc().Format;
+        std::wstring textureFileName = objects.at(modelIndex).getModel().getSections().at(modelSectionIndex).textureFileName;
+        SRVDesc.Format = textures.at(textureFileName)->GetDesc().Format;
         
-        deviceInterface->CreateShaderResourceView(textures.at(i).Get(), &SRVDesc, currDescriptorHandle);
-        currDescriptorHandle.ptr += 2 * deviceInterface->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-    }
-}
+        deviceInterface->CreateShaderResourceView(textures.at(textureFileName).Get(), &SRVDesc, currDescriptorHandle);
+        currDescriptorHandle.ptr += deviceInterface->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-void ResourceManager::initCTBufferProcessing() {
-    auto &CTBuffer = constantBuffers.at(0);
-
-    // Load all CT data with enough padding to be multiple of 256
-    paddedCTDataSize = PADDED_SIZE(sizeof(DirectX::XMMATRIX)) * objects.size();
-    paddedCTElementSize = PADDED_SIZE(sizeof(DirectX::XMMATRIX));
-    createBuffer(paddedCTDataSize, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, CTBuffer.GetAddressOf());
-
-    D3D12_CONSTANT_BUFFER_VIEW_DESC CTBDesc = {};
-    CTBDesc.SizeInBytes = (UINT)paddedCTElementSize;
-    CTBDesc.BufferLocation = CTBuffer->GetGPUVirtualAddress();
-    D3D12_CPU_DESCRIPTOR_HANDLE currDescriptorHandle = CTSRDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
-    
-    for (int i = 0; i < objects.size(); ++i) {
-        deviceInterface->CreateConstantBufferView(&CTBDesc, currDescriptorHandle);
-        currDescriptorHandle.ptr += 2 * deviceInterface->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-        CTBDesc.BufferLocation += paddedCTElementSize;
+        ++modelSectionIndex;
+        if (objects.at(modelIndex).getModel().getSections().size() == modelSectionIndex) {
+            modelSectionIndex = 0;
+            ++modelIndex;
+        }
     }
 }
 
@@ -173,10 +219,13 @@ void ResourceManager::initDepthStencilProcessing() {
     transition(D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE, depthStencil.Get());
 }
 
-void ResourceManager::updateCTBuffer() {
+void ResourceManager::updateMatrixCTBuffer() {
     for (Object &obj: objects) {
         obj.update();
     }
+
+    UINT64 paddedCTDataSize = PADDED_SIZE(sizeof(DirectX::XMMATRIX)) * objects.size();
+    UINT paddedCTElementSize = PADDED_SIZE(sizeof(DirectX::XMMATRIX));
 
     byte *data = new byte[paddedCTDataSize];
     for (int i = 0; i < objects.size(); ++i) {
@@ -205,6 +254,31 @@ void ResourceManager::updateCTBuffer() {
     }
 
     copyDataToBuffer(data, paddedCTDataSize, constantBuffers.at(0).GetAddressOf());
+    free(data);
+}
+
+void ResourceManager::updateLightingCTBuffer() {
+    UINT64 paddedCTDataSize = PADDED_SIZE(sizeof(DirectX::XMFLOAT3)) * numModelSections;
+    UINT paddedCTElementSize = PADDED_SIZE(sizeof(DirectX::XMFLOAT3));
+
+    byte *data = new byte[paddedCTDataSize];
+
+    int i = 0;
+    for (int modelIndex = 0; modelIndex < getNumModels(); ++modelIndex) {
+        auto &model = objects.at(modelIndex).getModel();
+        for (int sectionIndex = 0; sectionIndex < model.getSections().size(); ++sectionIndex) {
+            float vec[3];
+            vec[0] = model.getSections().at(sectionIndex).diffuseR;
+            vec[1] = model.getSections().at(sectionIndex).diffuseG;
+            vec[2] = model.getSections().at(sectionIndex).diffuseB;
+                                               
+            memcpy(data + i * paddedCTElementSize, (void *)&vec, 3 * sizeof(float));
+            ++i;
+        }
+    }
+
+    copyDataToBuffer(data, paddedCTDataSize, constantBuffers.at(1).GetAddressOf());
+    free(data);
 }
 
 void ResourceManager::createBuffer(UINT64 width, D3D12_HEAP_TYPE heapType, D3D12_RESOURCE_STATES resourceState, ID3D12Resource **resource) {

@@ -1,4 +1,4 @@
-#include "OBJLoader.hpp"
+#include "../include/OBJLoader.hpp"
 
 static void getTokensInLine(char *line, std::vector<Token> &lineTokens) {
     std::istringstream ISS(line);
@@ -82,6 +82,9 @@ Model OBJLoader::processModel(const std::vector<std::vector<Token>> &tokens) {
     std::vector<Position> vertexPos;
     std::vector<Tex> vertexTex;
     std::vector<Normal> vertexNormals;
+    std::vector<std::string> materialNames;
+
+    std::string materialFileName("");
 
     for (const std::vector<Token> &line: tokens) {
         auto &first = line.at(0);
@@ -92,7 +95,7 @@ Model OBJLoader::processModel(const std::vector<std::vector<Token>> &tokens) {
         } else if (first.str == "vt") { // Texture coords
             Tex tex;
             tex.u = line.at(1).getFloat();
-            tex.v = (line.size() > 2) ? line.at(2).getFloat() : 0.0f;
+            tex.v = (line.size() > 2) ? 1.0f - line.at(2).getFloat() : 0.0f;
             vertexTex.push_back(tex);
         } else if (first.str == "vn") { // Normal vector
             Normal normal = {line.at(1).getFloat(), line.at(2).getFloat(), line.at(3).getFloat()};
@@ -105,10 +108,17 @@ Model OBJLoader::processModel(const std::vector<std::vector<Token>> &tokens) {
 
             model.addFace(vertices);
         } else if (first.str == "mtllib") {
-            loadModelMaterial(model, line.at(1).str.c_str());
+            materialFileName = line.at(1).str;
+        } else if (first.str == "usemtl") {
+            model.addSection(line.at(1).str);
         }
     }
 
+    // Handle material file at the end after processing vertex data
+    if (!materialFileName.empty()) {
+        loadModelMaterial(model, materialFileName.c_str());
+    }
+    
     return model;
 }
 
@@ -125,12 +135,16 @@ void OBJLoader::loadModelMaterial(Model &model, const char *fileName) {
 }
 
 void OBJLoader::processModelMaterial(Model &model, const std::vector<std::vector<Token>> &tokens) {
+    std::string currMaterial("");
     for (const std::vector<Token> line: tokens) {
         auto &first = line.at(0);
 
-        if (first.str == "map_Kd") {
-            model.setTextureFileName(std::wstring(line.at(1).str.begin(), line.at(1).str.end()));
-            return;
+        if (first.str == "newmtl") {
+            currMaterial = std::string(line.at(1).str);
+        } else if (first.str == "Kd") {
+            model.setRGB(line.at(1).getFloat(), line.at(2).getFloat(), line.at(3).getFloat(), currMaterial);
+        } else if (first.str == "map_Kd") {
+            model.setTexture(std::wstring(line.at(1).str.begin(), line.at(1).str.end()), currMaterial);
         }
     }
 }

@@ -1,4 +1,4 @@
-#include "graphicsEngine.hpp"
+#include "../include/graphicsEngine.hpp"
 
 /* */
 
@@ -153,24 +153,33 @@ void GraphicsEngine::createRenderTarget() {
 
 void GraphicsEngine::createRootSignature() {
     // Create root signatures and pipeline state
-    D3D12_DESCRIPTOR_RANGE descriptorRanges[2];
+    D3D12_ROOT_PARAMETER rootParameters[3];
 
-    descriptorRanges[0] = {};
-    descriptorRanges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-    descriptorRanges[0].NumDescriptors = 1;
-    descriptorRanges[0].BaseShaderRegister = 0;
+    // CTB
+    rootParameters[0] = {};
+    rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+    rootParameters[0].Descriptor.ShaderRegister = 0;
+    rootParameters[0].Descriptor.RegisterSpace = 0;
 
-    descriptorRanges[1] = {};
-    descriptorRanges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    descriptorRanges[1].NumDescriptors = 1;
-    descriptorRanges[1].BaseShaderRegister = 0;
-    descriptorRanges[1].OffsetInDescriptorsFromTableStart = static_cast<UINT>(resourceManager->getNumModels());
+    rootParameters[1] = {};
+    rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    rootParameters[1].Descriptor.ShaderRegister = 1;
+    rootParameters[1].Descriptor.RegisterSpace = 0;
 
-    D3D12_ROOT_PARAMETER rootParameter;
-    rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-    rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-    rootParameter.DescriptorTable.NumDescriptorRanges = 2;
-    rootParameter.DescriptorTable.pDescriptorRanges = descriptorRanges;
+    // SRV
+    D3D12_DESCRIPTOR_RANGE descriptorRange;
+
+    descriptorRange = {};
+    descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    descriptorRange.NumDescriptors = 1;
+    descriptorRange.BaseShaderRegister = 0;
+
+    rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    rootParameters[2].DescriptorTable.NumDescriptorRanges = 1;
+    rootParameters[2].DescriptorTable.pDescriptorRanges = &descriptorRange;
 
     D3D12_STATIC_SAMPLER_DESC samplerDesc = {}; // Needed for sampling texture colors
     samplerDesc.AddressU = samplerDesc.AddressV = samplerDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
@@ -182,8 +191,8 @@ void GraphicsEngine::createRootSignature() {
     samplerDesc.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_ROOT_SIGNATURE_DESC rootSignDesc = {};
-    rootSignDesc.NumParameters = 1;
-    rootSignDesc.pParameters = &rootParameter;
+    rootSignDesc.NumParameters = 3;
+    rootSignDesc.pParameters = rootParameters;
     rootSignDesc.NumStaticSamplers = 1;
     rootSignDesc.pStaticSamplers = &samplerDesc;
     rootSignDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
@@ -311,15 +320,29 @@ void GraphicsEngine::render() {
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     commandList->IASetVertexBuffers(0, 1, resourceManager->getVertexBufferView());
     commandList->IASetIndexBuffer(resourceManager->getIndexBufferView());
-    int vertexStart = 0, indexStart = 0;
-    for (int i = 0; i < resourceManager->getNumModels(); ++i) {
-        const auto &model = resourceManager->getModelAt(i);
 
-        commandList->SetGraphicsRootDescriptorTable(0, CTDescriptorHandle);
-        commandList->DrawIndexedInstanced(model.getNumIndices(), 1, indexStart, vertexStart, 0);
-        CTDescriptorHandle.ptr += 2 * deviceInterface->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    int vertexStart = 0, indexStart = 0;
+    D3D12_GPU_VIRTUAL_ADDRESS matCTBGPUAddress = resourceManager->getMatCTBGPUAddress();
+    D3D12_GPU_VIRTUAL_ADDRESS lightingCTBGPUAddress = resourceManager->getLightingCTBGPUAddress();
+    D3D12_GPU_DESCRIPTOR_HANDLE SRVDescriptorHandle = resourceManager->getInitSRVDescriptorHandle();
+    for (int modelIndex = 0; modelIndex < resourceManager->getNumModels(); ++modelIndex) {
+        const auto &model = resourceManager->getModelAt(modelIndex);
+        commandList->SetGraphicsRootConstantBufferView(0, matCTBGPUAddress);
+
+        for (int modelSectionIndex = 0; modelSectionIndex < model.getSections().size(); ++modelSectionIndex) {
+            Model::ModelSection section = model.getSections().at(modelSectionIndex);
+            UINT numIndices = static_cast<UINT>((section.endTriangleIndex - section.beginTriangleIndex) * 3);
+
+            commandList->SetGraphicsRootConstantBufferView(1, lightingCTBGPUAddress);
+            commandList->SetGraphicsRootDescriptorTable(2, SRVDescriptorHandle);
+            commandList->DrawIndexedInstanced(numIndices, 1, indexStart, vertexStart, 0);
+            lightingCTBGPUAddress += PADDED_SIZE(sizeof(DirectX::XMFLOAT3));
+            SRVDescriptorHandle.ptr += deviceInterface->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+            indexStart += numIndices;
+        }
+
+        matCTBGPUAddress += PADDED_SIZE(sizeof(DirectX::XMMATRIX));
         vertexStart += model.getNumVertices();
-        indexStart += model.getNumIndices();
     }
 
     resourceBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;

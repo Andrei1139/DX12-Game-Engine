@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <cstdio>
+#include <unordered_map>
 #include <d3d12.h>
 #include <WICTextureLoader.h>
 #include <ResourceUploadBatch.h>
@@ -19,9 +20,9 @@ class ResourceManager {
                         width{pWidth},
                         height{pHeight},
                         RUB(pDeviceInterface.Get()) {}
-        void addObject(Object &object);
+        void addObject(Object object);
         void createResources(ID3D12CommandQueue *queue);
-        void updateResources() {updateCTBuffer();}
+        void updateResources() {updateMatrixCTBuffer();}
 
         const Model &getModelAt(int index) {return objects.at(index).getModel();}
         size_t getNumModels() const {return objects.size();}
@@ -31,15 +32,29 @@ class ResourceManager {
         ID3D12DescriptorHeap **getCTSRDescriptorHeap() {return CTSRDescriptorHeap.GetAddressOf();}
         ID3D12DescriptorHeap *getDSDescriptorHeap() {return DSVHeap.Get();}
 
+        D3D12_GPU_VIRTUAL_ADDRESS getMatCTBGPUAddress() {
+            return constantBuffers.at(0)->GetGPUVirtualAddress();
+        }
+        D3D12_GPU_VIRTUAL_ADDRESS getLightingCTBGPUAddress() {
+            return constantBuffers.at(1)->GetGPUVirtualAddress();
+        }
+        D3D12_GPU_DESCRIPTOR_HANDLE getInitSRVDescriptorHandle() {
+            auto GPUStart = CTSRDescriptorHeap->GetGPUDescriptorHandleForHeapStart();
+            GPUStart.ptr += deviceInterface->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV) * (numModelSections + getNumModels());
+            return GPUStart;
+        }
+
     private:
         void initTextureProcessing(ID3D12CommandQueue *queue);
         void initVertexProcessing();
         void initIndexProcessing();
         void initDescriptorHeap();
-        void initCTBufferProcessing();
+        void initMatrixCTBufferProcessing();
+        void initLightingCTBufferProcessing();
         void initDepthStencilProcessing();
 
-        void updateCTBuffer();
+        void updateMatrixCTBuffer();
+        void updateLightingCTBuffer();
 
         void createBuffer(UINT64 width, D3D12_HEAP_TYPE heapType, D3D12_RESOURCE_STATES resourceState, ID3D12Resource **resource);
         void copyDataToBuffer(void *data, UINT64 dataLen, ID3D12Resource **buffer);
@@ -49,19 +64,24 @@ class ResourceManager {
         std::vector<Vertex> aggregateVertexList;
         std::vector<UINT32> aggregateIndexList;
 
-        UINT64 paddedCTDataSize = 0;
-        UINT paddedCTElementSize = 0;
+        size_t numModelSections = 0;
 
-        std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> vertexBuffers = std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>>(1);
-        std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> indexBuffers = std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>>(1);
-        std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> constantBuffers = std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>>(1);
-        std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> intermediaryBuffers = std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>>(2);
-        Microsoft::WRL::ComPtr<ID3D12Resource> depthStencil;
-        std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> textures;
         DirectX::ResourceUploadBatch RUB;
 
+        // Resources
+        std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> vertexBuffers = std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>>(1);
+        std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> indexBuffers = std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>>(1);
+        std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> constantBuffers = std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>>(2);
+        std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> intermediaryBuffers = std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>>(2);
+        Microsoft::WRL::ComPtr<ID3D12Resource> depthStencil;
+        std::unordered_map<std::wstring, Microsoft::WRL::ComPtr<ID3D12Resource>> textures;
+
+        // Descriptors/Views
         D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
         D3D12_INDEX_BUFFER_VIEW indexBufferView;
+        D3D12_CPU_DESCRIPTOR_HANDLE currDescriptorHandle, initSRVDescriptorHandle;
+
+        // Descriptor heaps
         Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> CTSRDescriptorHeap, DSVHeap;
 
         const Camera &camera;

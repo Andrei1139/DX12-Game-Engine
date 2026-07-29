@@ -1,1 +1,10 @@
-map_Kd cube.png
+newmtl mtl1
+Kd 1.0 1.0 0.0
+newmtl mtl2
+Kd 1.0 0.0 1.0
+newmtl mtl3
+Kd 0.0 1.0 1.0
+newmtl mtl4
+Kd 1.0 0.0 0.0
+newmtl mtl5
+Kd 0.0 1.0 0.0

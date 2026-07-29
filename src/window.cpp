@@ -1,5 +1,5 @@
 #include <iostream>
-#include "window.hpp"
+#include "../include/window.hpp"
 
 LRESULT CALLBACK EngineWindow::WindowProc(HWND windowHandle, UINT msgCode, WPARAM wParam, LPARAM lParam) {
     static EngineWindow *engineWindow = nullptr; // For reference since the function cannot be set as instance method

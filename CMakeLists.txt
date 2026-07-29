@@ -5,7 +5,9 @@ add_executable(GameEngine src/main.cpp
     src/window.cpp
     src/graphicsEngine.cpp
     src/resourceManager.cpp
-    src/OBJLoader.cpp)
+    src/OBJLoader.cpp
+    src/model.cpp
+    src/timer.cpp)
 
 target_link_libraries(GameEngine PRIVATE d3d12.lib dxgi.lib d3dcompiler.lib DirectXTK12 runtimeobject.lib)
 

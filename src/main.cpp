@@ -1,8 +1,8 @@
 #include <iostream>
-#include "timer.hpp"
-#include "camera.hpp"
-#include "window.hpp"
-#include "graphicsEngine.hpp"
+#include "../include/timer.hpp"
+#include "../include/camera.hpp"
+#include "../include/window.hpp"
+#include "../include/graphicsEngine.hpp"
 
 int main() {
     // Needed for Windows Imagining Component functionality
@@ -31,9 +31,10 @@ int main() {
 
         Object object;
         object.setScaleX(0.5f).setScaleY(0.5f).setScaleZ(0.5f);
-        graphicsEngine.addObject(object, "giant_low_poly_tree.obj");
+        graphicsEngine.addObject(object, "cube.obj");
 
         graphicsEngine.finishInitialization();
+        
         while (window.isOpen()) {
             window.handleEvents();
 
