@@ -4,6 +4,8 @@
 LRESULT CALLBACK EngineWindow::WindowProc(HWND windowHandle, UINT msgCode, WPARAM wParam, LPARAM lParam) {
     static EngineWindow *engineWindow = nullptr; // For reference since the function cannot be set as instance method
     switch (msgCode) {
+        case WM_GETMINMAXINFO:
+            return DefWindowProc(windowHandle, msgCode, wParam, lParam);
         case WM_NCCREATE: {
             CREATESTRUCT *createStruct = reinterpret_cast<CREATESTRUCT *>(lParam);
             engineWindow = reinterpret_cast<EngineWindow *>(createStruct->lpCreateParams);
@@ -13,79 +15,95 @@ LRESULT CALLBACK EngineWindow::WindowProc(HWND windowHandle, UINT msgCode, WPARA
             }
         }
             break;
-        case WM_INPUT: {
-            static UINT rawInputDataSize = sizeof(RAWINPUT);
-            static RAWINPUT rawInputData;
-            GetRawInputData((HRAWINPUT)lParam, RID_INPUT, (void *)&rawInputData, &rawInputDataSize, sizeof(RAWINPUTHEADER));
-
-            if (rawInputData.header.dwType == RIM_TYPEMOUSE) {
-                int xDir = rawInputData.data.mouse.lLastX;
-                int yDir = rawInputData.data.mouse.lLastY;
-
-                engineWindow->modifyX(xDir);
-                engineWindow->modifyY(yDir);
-            }
-
-            break;
-        }
-        case WM_KEYDOWN: {
-            switch (wParam) {
-                case 'W':
-                    engineWindow->Won = true;
-                    break;
-                case 'A':
-                    engineWindow->Aon = true;
-                    break;
-                case 'S':
-                    engineWindow->Son = true;
-                    break;
-                case 'D':
-                    engineWindow->Don = true;
-                    break;
-                case VK_SPACE:
-                    engineWindow->spaceOn = true;
-                    break;
-                case VK_SHIFT:
-                    engineWindow->shiftOn = true;
-                    break;
-            }
-            
-            return 0;
-        }
-        case WM_KEYUP: {
-            switch (wParam) {
-                case 'W':
-                    engineWindow->Won = false;
-                    break;
-                case 'A':
-                    engineWindow->Aon = false;
-                    break;
-                case 'S':
-                    engineWindow->Son = false;
-                    break;
-                case 'D':
-                    engineWindow->Don = false;
-                    break;
-                case VK_SPACE:
-                    engineWindow->spaceOn = false;
-                    break;
-                case VK_SHIFT:
-                    engineWindow->shiftOn = false;
-                    break;
-
-                case 'X':
-                    engineWindow->closeWindow();
-                    return 0;
-            }
-            
-            return 0;
-        }
         case WM_CLOSE:
             engineWindow->closeWindow();
             return 0;
         case WM_DESTROY:
             PostQuitMessage(0);
             return 0;
+    }
+
+    if (engineWindow->isPaused()) {
+        if (msgCode == WM_KEYDOWN && wParam == 'P') {
+            if (GetActiveWindow() == windowHandle) {
+                engineWindow->unpause();
+                ShowCursor(false);
+            }
+        }
+    } else {
+        switch (msgCode) {
+            case WM_INPUT: {
+                static UINT rawInputDataSize = sizeof(RAWINPUT);
+                static RAWINPUT rawInputData;
+                GetRawInputData((HRAWINPUT)lParam, RID_INPUT, (void *)&rawInputData, &rawInputDataSize, sizeof(RAWINPUTHEADER));
+
+                if (rawInputData.header.dwType == RIM_TYPEMOUSE) {
+                    int xDir = rawInputData.data.mouse.lLastX;
+                    int yDir = rawInputData.data.mouse.lLastY;
+
+                    engineWindow->modifyX(xDir);
+                    engineWindow->modifyY(yDir);
+                }
+
+                break;
+            }
+            case WM_KEYDOWN: {
+                switch (wParam) {
+                    case 'W':
+                        engineWindow->Won = true;
+                        break;
+                    case 'A':
+                        engineWindow->Aon = true;
+                        break;
+                    case 'S':
+                        engineWindow->Son = true;
+                        break;
+                    case 'D':
+                        engineWindow->Don = true;
+                        break;
+                    case VK_SPACE:
+                        engineWindow->spaceOn = true;
+                        break;
+                    case VK_SHIFT:
+                        engineWindow->shiftOn = true;
+                        break;
+                    case 'P':
+                        engineWindow->pause();
+                        ShowCursor(true);
+                        return 0;
+                }
+                
+                return 0;
+            }
+            case WM_KEYUP: {
+                switch (wParam) {
+                    case 'W':
+                        engineWindow->Won = false;
+                        break;
+                    case 'A':
+                        engineWindow->Aon = false;
+                        break;
+                    case 'S':
+                        engineWindow->Son = false;
+                        break;
+                    case 'D':
+                        engineWindow->Don = false;
+                        break;
+                    case VK_SPACE:
+                        engineWindow->spaceOn = false;
+                        break;
+                    case VK_SHIFT:
+                        engineWindow->shiftOn = false;
+                        break;
+
+                    case 'X':
+                        engineWindow->closeWindow();
+                        return 0;
+                }
+                
+                return 0;
+            }
+        }
     }
 
     return DefWindowProc(windowHandle, msgCode, wParam, lParam);
@@ -101,7 +119,7 @@ EngineWindow::EngineWindow(int width, int height, LPCSTR barName, Camera &camera
     windowClass.lpfnWndProc = WindowProc;
     windowClass.hInstance = currAppInstanceHandle;
     windowClass.lpszClassName = windowClassName;
-    windowClass.hCursor = LoadCursor(NULL, IDC_CROSS);
+    windowClass.hCursor = LoadCursor(NULL, IDC_ARROW);
 
     RegisterClass(&windowClass);
 
@@ -146,7 +164,8 @@ void EngineWindow::handleEvents() {
         } while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE) > 0);
     }
 
-    SetCursorPos(getXCenter(), getYCenter());
+    if (!paused)
+        SetCursorPos(getXCenter(), getYCenter());
     finishFrameChanges();
 }
 

@@ -18,6 +18,7 @@ class EngineWindow {
         static LRESULT CALLBACK WindowProc(HWND windowHandle, UINT msgCode, WPARAM wParam, LPARAM lParam);
 
         bool open = true;
+        bool paused = false;
 
         void finishFrameChanges();
         float dx = 0, dy = 0;
@@ -26,6 +27,7 @@ class EngineWindow {
     public:
         EngineWindow(int width, int height, LPCSTR barName, Camera &camera);
         bool isOpen() const {return open;}
+        bool isPaused() const {return paused;}
         void handleEvents();
         
         int getWidth() const {return width;}
@@ -33,6 +35,8 @@ class EngineWindow {
         HWND getWindowHandle() const {return windowHandle;}
 
         void closeWindow() {open = false; DestroyWindow(windowHandle);}
+        void pause() {paused = true;}
+        void unpause() {paused = false;}
 
         void modifyX(int inc) {dx += inc;}
         void modifyY(int inc) {dy += inc;}

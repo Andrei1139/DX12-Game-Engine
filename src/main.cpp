@@ -1,8 +1,10 @@
 #include <iostream>
+#include <thread>
 #include "../include/timer.hpp"
 #include "../include/camera.hpp"
 #include "../include/window.hpp"
 #include "../include/graphicsEngine.hpp"
+#include "../include/interface.hpp"
 
 int main() {
     // Needed for Windows Imagining Component functionality
@@ -18,8 +20,10 @@ int main() {
 
     int width = GetSystemMetrics(SM_CXSCREEN);
     int height = GetSystemMetrics(SM_CYSCREEN);
-    // int width = 800;
-    // int height = 600;
+
+    Interface _interface;
+
+    // std::thread interfaceThread(&Interface::display, &_interface);
 
     try {
         Camera camera(width, height);
@@ -27,7 +31,7 @@ int main() {
         GraphicsEngine graphicsEngine(window, camera);
 
         Timer timer(FPS);
-        timer.setFrameDisplay(false);
+        timer.setFrameDisplay(true);
 
         Object object;
         object.setScaleX(0.5f).setScaleY(0.5f).setScaleZ(0.5f);
